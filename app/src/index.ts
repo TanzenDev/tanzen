@@ -16,3 +16,15 @@ export {
   type NavItem,
   type RouteItem,
 } from "./extensions/registry.js";
+export {
+  irToGraph,
+  type WorkflowIR,
+  type IrStep,
+  type StepData,
+  type GateData,
+  type TaskData,
+  type ScriptData,
+  type OutputData,
+} from "./components/WorkflowCanvas.js";
+export { useRun, useWorkflowDsl } from "./api/hooks.js";
+export { api, type RunEvent } from "./api/client.js";

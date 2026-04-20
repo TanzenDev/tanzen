@@ -67,7 +67,7 @@ export interface ScriptData extends Record<string, unknown> {
 
 // ─── IR shape (from compile endpoint) ────────────────────────────────────────
 
-interface IrAgentStep {
+export interface IrAgentStep {
   type: "agent";
   id: string;
   agentId: string;
@@ -76,15 +76,15 @@ interface IrAgentStep {
   when?: { $ref: string };
   timeoutSeconds?: number;
 }
-interface IrGateStep {
+export interface IrGateStep {
   type: "gate";
   id: string;
   assignee: string | { $ref: string };
   timeoutSeconds?: number;
   input?: unknown;
 }
-interface IrParallelStep { type: "parallel"; id: string }
-interface IrTaskStep {
+export interface IrParallelStep { type: "parallel"; id: string }
+export interface IrTaskStep {
   type: "task";
   id: string;
   action: string;
@@ -93,7 +93,7 @@ interface IrTaskStep {
   when?: { $ref: string };
   timeoutSeconds?: number;
 }
-interface IrScriptStep {
+export interface IrScriptStep {
   type: "script";
   id: string;
   scriptName: string;
@@ -104,9 +104,9 @@ interface IrScriptStep {
   when?: { $ref: string };
   timeoutSeconds?: number;
 }
-type IrStep = IrAgentStep | IrGateStep | IrParallelStep | IrTaskStep | IrScriptStep;
+export type IrStep = IrAgentStep | IrGateStep | IrParallelStep | IrTaskStep | IrScriptStep;
 
-interface WorkflowIR {
+export interface WorkflowIR {
   name: string;
   version: string;
   steps: IrStep[];

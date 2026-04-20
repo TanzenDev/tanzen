@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "emitDeclarationOnly": true,
+    "declaration": true,
+    "rootDir": "src",
+    "declarationDir": "dist-lib",
+    "allowImportingTsExtensions": false,
+    "outDir": "dist-lib"
+  },
+  "include": ["src/index.ts"]
+}
