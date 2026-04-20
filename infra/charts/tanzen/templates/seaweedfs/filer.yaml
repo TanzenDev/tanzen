@@ -1,0 +1,190 @@
+{{- if .Values.seaweedfs.enabled }}
+# =============================================================================
+# SeaweedFS — Filer
+# Provides the S3-compatible API consumed by API server and Python workers.
+# Filer metadata is stored in the Postgres 'seaweedfs' database.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: seaweedfs-filer-config
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: seaweedfs-filer
+    app.kubernetes.io/part-of: tanzen
+data:
+  filer.toml: |
+    [postgres2]
+    enabled = true
+    hostname = "tanzen-postgres-rw"
+    port = 5432
+    username = "seaweedfs_user"
+    password = ""
+    database = "seaweedfs"
+    schema = ""
+    sslmode = "disable"
+    connection_max_idle = 2
+    connection_max_open = 100
+    connection_max_lifetime_seconds = 0
+    createTable = """
+      CREATE TABLE IF NOT EXISTS "%s" (
+        dirhash   BIGINT,
+        name      VARCHAR(65535),
+        directory VARCHAR(65535),
+        meta      bytea,
+        PRIMARY KEY (dirhash, name)
+      );
+    """
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs-filer
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: seaweedfs-filer
+    app.kubernetes.io/component: filer
+    app.kubernetes.io/part-of: tanzen
+spec:
+  replicas: {{ .Values.seaweedfs.filer.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs-filer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: seaweedfs-filer
+        app.kubernetes.io/component: filer
+        app.kubernetes.io/part-of: tanzen
+    spec:
+      containers:
+        - name: seaweedfs-filer
+          image: {{ .Values.seaweedfs.filer.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - filer
+            - -master=seaweedfs-master:{{ .Values.seaweedfs.master.service.httpPort }}
+            - -port={{ .Values.seaweedfs.filer.service.httpPort }}
+            - -s3
+            - -s3.port=8333
+            - -s3.allowEmptyFolder=false
+          env:
+            - name: WEED_FILER_OPTIONS_RECURSIVE_DELETE
+              value: "false"
+            - name: WEED_POSTGRES2_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-db-credentials
+                  key: password
+          ports:
+            - name: http
+              containerPort: {{ .Values.seaweedfs.filer.service.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.seaweedfs.filer.service.grpcPort }}
+            - name: s3
+              containerPort: 8333
+          volumeMounts:
+            - name: filer-config
+              mountPath: /etc/seaweedfs
+          resources:
+            {{- toYaml .Values.seaweedfs.filer.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+      volumes:
+        - name: filer-config
+          configMap:
+            name: seaweedfs-filer-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs-filer
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: seaweedfs-filer
+    app.kubernetes.io/component: filer
+    app.kubernetes.io/part-of: tanzen
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: seaweedfs-filer
+  ports:
+    - name: http
+      port: {{ .Values.seaweedfs.filer.service.httpPort }}
+      targetPort: http
+    - name: grpc
+      port: {{ .Values.seaweedfs.filer.service.grpcPort }}
+      targetPort: grpc
+    - name: s3
+      port: 8333
+      targetPort: s3
+---
+# Post-install Job: create the three required S3 buckets
+# Runs once after all resources are deployed. Idempotent (mc mb --ignore-existing).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seaweedfs-init-buckets
+  namespace: {{ .Values.global.namespace }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": hook-succeeded
+  labels:
+    app.kubernetes.io/name: seaweedfs-init-buckets
+    app.kubernetes.io/part-of: tanzen
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+        # Wait for filer S3 port to be ready
+        - name: wait-for-filer
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for SeaweedFS filer S3 endpoint..."
+              until nc -z seaweedfs-filer 8333; do
+                echo "  not ready, sleeping 5s..."
+                sleep 5
+              done
+              echo "Filer S3 endpoint is ready."
+      containers:
+        - name: create-buckets
+          image: minio/mc:RELEASE.2024-07-31T15-58-33Z
+          env:
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.seaweedfs.s3CredentialsSecret }}
+                  key: access_key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.seaweedfs.s3CredentialsSecret }}
+                  key: secret_key
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              mc alias set weed http://seaweedfs-filer:8333 $S3_ACCESS_KEY $S3_SECRET_KEY
+              {{- range .Values.seaweedfs.buckets }}
+              echo "Creating bucket: {{ . }}"
+              mc mb --ignore-existing weed/{{ . }}
+              {{- end }}
+              echo "All buckets created successfully."
+{{- end }}

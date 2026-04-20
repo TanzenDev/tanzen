@@ -1,0 +1,143 @@
+{{- if .Values.mcp.falkordb.enabled }}
+---
+# FalkorDB database — persistent graph store (Redis protocol)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: falkordb-db
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: falkordb-db
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: falkordb-db
+  template:
+    metadata:
+      labels:
+        app: falkordb-db
+    spec:
+      containers:
+        - name: falkordb
+          image: "{{ .Values.mcp.falkordb.dbImage }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mcp.falkordb.dbPort }}
+          volumeMounts:
+            - name: falkordb-data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: {{ .Values.mcp.falkordb.dbResources.requests.cpu }}
+              memory: {{ .Values.mcp.falkordb.dbResources.requests.memory }}
+            limits:
+              memory: {{ .Values.mcp.falkordb.dbResources.limits.memory }}
+      volumes:
+        - name: falkordb-data
+          persistentVolumeClaim:
+            claimName: falkordb-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: falkordb-data
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: falkordb-db
+    app.kubernetes.io/part-of: tanzen
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.mcp.falkordb.storage }}
+  {{- if .Values.global.storageClass }}
+  storageClassName: {{ .Values.global.storageClass }}
+  {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: falkordb-db
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: falkordb-db
+    app.kubernetes.io/part-of: tanzen
+spec:
+  selector:
+    app: falkordb-db
+  ports:
+    - port: {{ .Values.mcp.falkordb.dbPort }}
+      targetPort: {{ .Values.mcp.falkordb.dbPort }}
+  type: ClusterIP
+---
+# FalkorDB MCP server — exposes graph tools over HTTP/MCP
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-falkordb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-falkordb
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    tanzen/mcp: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-falkordb
+  template:
+    metadata:
+      labels:
+        app: mcp-falkordb
+        tanzen/mcp: "true"
+    spec:
+      containers:
+        - name: mcp-falkordb
+          image: "{{ .Values.mcp.falkordb.mcpImage }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mcp.falkordb.mcpPort }}
+          env:
+            - name: PORT
+              value: "{{ .Values.mcp.falkordb.mcpPort }}"
+            - name: FALKORDB_URL
+              value: "redis://falkordb-db:{{ .Values.mcp.falkordb.dbPort }}"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.mcp.falkordb.mcpPort }}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: {{ .Values.mcp.falkordb.mcpResources.requests.cpu }}
+              memory: {{ .Values.mcp.falkordb.mcpResources.requests.memory }}
+            limits:
+              memory: {{ .Values.mcp.falkordb.mcpResources.limits.memory }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-falkordb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-falkordb
+    app.kubernetes.io/part-of: tanzen
+    tanzen/mcp: "true"
+  annotations:
+    tanzen/mcp-name: "falkordb"
+    tanzen/mcp-description: "Graph database — Cypher queries via FalkorDB"
+    tanzen/mcp-transport: "http"
+spec:
+  selector:
+    app: mcp-falkordb
+  ports:
+    - port: {{ .Values.mcp.falkordb.mcpPort }}
+      targetPort: {{ .Values.mcp.falkordb.mcpPort }}
+  type: ClusterIP
+{{- end }}

@@ -1,0 +1,122 @@
+name: Infrastructure Smoke Tests
+
+on:
+  push:
+    branches: [main, dev]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra-smoke.yaml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'infra/**'
+      - '.github/workflows/infra-smoke.yaml'
+
+# Cancel in-progress runs for the same branch/PR
+concurrency:
+  group: infra-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke-test:
+    name: Deploy and Smoke Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      # ------------------------------------------------------------------
+      # 1. Checkout
+      # ------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------
+      # 2. Install tools
+      # ------------------------------------------------------------------
+      - name: Install kind
+        uses: helm/kind-action@v1.10.0
+        with:
+          # Don't create cluster yet — bootstrap.sh handles that
+          install_only: true
+          version: v0.23.0
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.30.0
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.15.0
+
+      # ------------------------------------------------------------------
+      # 3. Cache Helm charts (speeds up subsequent runs significantly)
+      # ------------------------------------------------------------------
+      - name: Cache Helm repositories
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/helm
+          key: helm-repos-${{ hashFiles('infra/charts/tanzen/Chart.yaml') }}
+          restore-keys: |
+            helm-repos-
+
+      # ------------------------------------------------------------------
+      # 4. Bootstrap: create cluster + install operators + create secrets
+      # ------------------------------------------------------------------
+      - name: Bootstrap cluster
+        run: |
+          chmod +x infra/scripts/bootstrap.sh
+          ./infra/scripts/bootstrap.sh \
+            --new-cluster \
+            --cluster tanzen-ci \
+            --namespace tanzen-dev
+        env:
+          TANZEN_NAMESPACE: tanzen-dev
+
+      # ------------------------------------------------------------------
+      # 5. Wait for all pods to be ready (belt-and-suspenders)
+      # ------------------------------------------------------------------
+      - name: Wait for pods
+        run: |
+          kubectl wait --for=condition=ready pod \
+            --all -n tanzen-dev \
+            --timeout=300s
+        continue-on-error: true   # smoke-test.sh will surface any issues
+
+      # ------------------------------------------------------------------
+      # 6. Run smoke tests
+      # ------------------------------------------------------------------
+      - name: Run smoke tests
+        run: |
+          chmod +x infra/scripts/smoke-test.sh
+          ./infra/scripts/smoke-test.sh \
+            --namespace tanzen-dev \
+            --verbose
+        env:
+          TANZEN_NAMESPACE: tanzen-dev
+
+      # ------------------------------------------------------------------
+      # 7. Collect diagnostics on failure
+      # ------------------------------------------------------------------
+      - name: Collect diagnostics (on failure)
+        if: failure()
+        run: |
+          echo "=== Pods ==="
+          kubectl get pods -n tanzen-dev -o wide
+          echo ""
+          echo "=== Events ==="
+          kubectl get events -n tanzen-dev --sort-by='.lastTimestamp' | tail -40
+          echo ""
+          echo "=== Failed pod logs ==="
+          kubectl get pods -n tanzen-dev --no-headers | awk '$3 != "Running" && $3 != "Completed" {print $1}' | \
+            xargs -I{} kubectl logs -n tanzen-dev {} --tail=50 2>/dev/null || true
+
+      # ------------------------------------------------------------------
+      # 8. Validate Helm chart templates (separate job step for clarity)
+      # ------------------------------------------------------------------
+      - name: Helm lint
+        if: always()
+        run: |
+          helm lint infra/charts/tanzen \
+            --values infra/charts/tanzen/values.yaml

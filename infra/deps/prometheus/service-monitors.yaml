@@ -1,0 +1,46 @@
+---
+# ServiceMonitor for tanzen-api Prometheus scraping.
+# Requires kube-prometheus-stack CRDs (monitoring.coreos.com/v1).
+# Label `release: tanzen` matches the kube-prometheus-stack Helm release selector.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tanzen-api
+  namespace: tanzen-dev
+  labels:
+    release: tanzen          # must match prometheus.serviceMonitorSelector.matchLabels
+    app.kubernetes.io/part-of: tanzen
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tanzen-api
+  endpoints:
+    - port: metrics           # named port on the tanzen-api Service (9464)
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - tanzen-dev
+---
+# ServiceMonitor for tanzen-worker Prometheus scraping.
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: tanzen-worker
+  namespace: tanzen-dev
+  labels:
+    release: tanzen
+    app.kubernetes.io/part-of: tanzen
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: tanzen-worker
+  endpoints:
+    - port: metrics           # named port on the tanzen-worker Service (9465)
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s
+  namespaceSelector:
+    matchNames:
+      - tanzen-dev

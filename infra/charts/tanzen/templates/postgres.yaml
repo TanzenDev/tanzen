@@ -1,0 +1,75 @@
+{{- if .Values.postgres.enabled }}
+# =============================================================================
+# CloudNativePG Cluster — Managed PostgreSQL
+# Creates two databases: 'temporal' and 'tanzen'
+# Credentials are stored in K8s Secrets managed by the CNPG operator.
+# =============================================================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: tanzen-postgres
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: tanzen-postgres
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  instances: {{ .Values.postgres.instances }}
+  imageName: {{ .Values.postgres.imageName }}
+
+  postgresql:
+    pg_hba:
+      - host all all 0.0.0.0/0 md5
+
+  bootstrap:
+    initdb:
+      database: tanzen          # Application database
+      owner: tanzen_user
+      secret:
+        name: {{ .Values.postgres.tanzanSecretName }}
+      postInitSQL:
+        # CNPG managed.roles run AFTER initdb, so we must create the roles here
+        # first before assigning database ownership. managed.roles will then
+        # update the passwords from the referenced K8s Secrets.
+        - "CREATE ROLE temporal_user WITH LOGIN"
+        - "CREATE DATABASE temporal OWNER temporal_user"
+        - "CREATE DATABASE temporal_visibility OWNER temporal_user"
+        - "CREATE ROLE seaweedfs_user WITH LOGIN"
+        - "CREATE DATABASE seaweedfs OWNER seaweedfs_user"
+
+  # managed.roles updates passwords for roles already created in postInitSQL
+  managed:
+    roles:
+      - name: temporal_user
+        ensure: present
+        login: true
+        passwordSecret:
+          name: {{ .Values.postgres.temporalSecretName }}
+      - name: tanzen_user
+        ensure: present
+        login: true
+        passwordSecret:
+          name: {{ .Values.postgres.tanzanSecretName }}
+      - name: seaweedfs_user
+        ensure: present
+        login: true
+        passwordSecret:
+          name: seaweedfs-db-credentials
+
+  storage:
+    size: {{ .Values.postgres.storage.size }}
+    {{- if .Values.global.storageClass }}
+    storageClass: {{ .Values.global.storageClass }}
+    {{- end }}
+
+  # Monitoring: expose metrics for Prometheus
+  monitoring:
+    enablePodMonitor: true
+{{- end }}
+{{- /*
+Credential secrets (temporal-db-credentials, tanzen-db-credentials,
+seaweedfs-db-credentials, seaweedfs-s3-credentials, grafana-admin-credentials)
+are created by infra/scripts/bootstrap.sh with randomly-generated passwords
+BEFORE helm install runs. They must NOT be defined here — doing so would
+overwrite bootstrap-generated values with placeholders on every helm upgrade.
+*/ -}}

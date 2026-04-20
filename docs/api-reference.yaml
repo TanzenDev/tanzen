@@ -1,0 +1,829 @@
+openapi: "3.1.0"
+info:
+  title: Tanzen API
+  description: |
+    Hono/Bun API server for the Tanzen agent workflow orchestration platform.
+
+    All `/api/*` endpoints require a Clerk JWT Bearer token unless otherwise noted.
+    Roles: **admin** > **author** > **reviewer** > **viewer**
+  version: "1.0.0"
+  contact:
+    name: Tanzen Platform
+
+servers:
+  - url: http://localhost:3001
+    description: Local development (Vite proxies /api here)
+  - url: https://tanzen.{domain}/api
+    description: Production (in-cluster ingress)
+    variables:
+      domain:
+        default: example.com
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT   # Clerk-issued JWT
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    WorkflowVersion:
+      type: object
+      properties:
+        version: { type: string, example: "1.0.0" }
+        dsl_key: { type: string }
+        ir_key: { type: string }
+        created_at: { type: string, format: date-time }
+        promoted: { type: boolean, default: false }
+
+    Workflow:
+      type: object
+      required: [id, name, current_version, created_at, created_by]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: contract-review }
+        current_version: { type: string, example: "1.0.0" }
+        created_at: { type: string, format: date-time }
+        created_by: { type: string }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/WorkflowVersion" }
+
+    AgentVersion:
+      type: object
+      properties:
+        version: { type: string, example: "1.0" }
+        config_key: { type: string }
+        created_at: { type: string, format: date-time }
+        promoted: { type: boolean, default: false }
+
+    Agent:
+      type: object
+      required: [id, name, current_version, model, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: document-parser }
+        current_version: { type: string, example: "1.0" }
+        model:
+          type: string
+          example: openai:gpt-4o
+          enum:
+            - openai:gpt-4o
+            - openai:gpt-4o-mini
+            - openai:gpt-4-turbo
+            - anthropic:claude-opus-4-6
+            - anthropic:claude-sonnet-4-6
+            - anthropic:claude-haiku-4-5
+            - google:gemini-1.5-pro
+            - google:gemini-1.5-flash
+            - test
+        created_at: { type: string, format: date-time }
+        versions:
+          type: array
+          items: { $ref: "#/components/schemas/AgentVersion" }
+
+    RunStep:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        step_id: { type: string }
+        agent_id: { type: string }
+        status: { type: string, enum: [running, succeeded, failed, skipped] }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        input_artifact_key: { type: string, nullable: true }
+        output_artifact_key: { type: string, nullable: true }
+        token_count: { type: integer }
+        cost_usd: { type: number, format: double }
+
+    Run:
+      type: object
+      required: [id, workflow_id, workflow_version, status, triggered_by, started_at]
+      properties:
+        id: { type: string }
+        workflow_id: { type: string, format: uuid }
+        workflow_version: { type: string }
+        status:
+          type: string
+          enum: [running, succeeded, failed, awaiting_gate]
+        triggered_by: { type: string }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time, nullable: true }
+        temporal_workflow_id: { type: string }
+        steps:
+          type: array
+          items: { $ref: "#/components/schemas/RunStep" }
+
+    Gate:
+      type: object
+      required: [id, run_id, step_id, assignee, status, opened_at]
+      properties:
+        id: { type: string, format: uuid }
+        run_id: { type: string }
+        step_id: { type: string }
+        assignee: { type: string }
+        status: { type: string, enum: [pending, approved, rejected] }
+        opened_at: { type: string, format: date-time }
+
+    CompileError:
+      type: object
+      required: [line, column, message, severity]
+      properties:
+        line: { type: integer }
+        column: { type: integer }
+        message: { type: string }
+        severity: { type: string, enum: [error, warning] }
+
+    CompileResult:
+      type: object
+      required: [ok]
+      properties:
+        ok: { type: boolean }
+        ir: { type: object, description: "JSON IR (present when ok=true)" }
+        errors:
+          type: array
+          items: { $ref: "#/components/schemas/CompileError" }
+
+    MetricsSummary:
+      type: object
+      properties:
+        total_runs: { type: integer }
+        succeeded: { type: integer }
+        failed: { type: integer }
+        running: { type: integer }
+        avg_duration_s: { type: number, nullable: true }
+
+    Metrics:
+      type: object
+      properties:
+        summary: { $ref: "#/components/schemas/MetricsSummary" }
+        byWorkflow:
+          type: array
+          items:
+            type: object
+            properties:
+              workflow_id: { type: string }
+              run_count: { type: integer }
+              succeeded: { type: integer }
+        tokenSummary:
+          type: array
+          items:
+            type: object
+            properties:
+              agent_id: { type: string }
+              total_tokens: { type: integer }
+              total_cost: { type: number }
+        from: { type: string, format: date-time }
+        to: { type: string, format: date-time }
+
+    Secret:
+      type: object
+      properties:
+        name: { type: string }
+        createdAt: { type: string, format: date-time, nullable: true }
+
+  responses:
+    BadRequest:
+      description: Validation error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Unauthorized:
+      description: Missing or invalid JWT
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    Forbidden:
+      description: Insufficient role
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    TooManyRequests:
+      description: Rate limit exceeded
+      headers:
+        X-RateLimit-Limit:
+          schema: { type: integer }
+        X-RateLimit-Remaining:
+          schema: { type: integer }
+        X-RateLimit-Reset:
+          schema: { type: integer, description: "Unix timestamp when window resets" }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      operationId: healthCheck
+      responses:
+        "200":
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  ts: { type: string, format: date-time }
+
+  /metrics:
+    get:
+      summary: Prometheus metrics (scraped by kube-prometheus-stack)
+      security: []
+      operationId: prometheusMetrics
+      responses:
+        "200":
+          description: Prometheus text format
+          content:
+            text/plain:
+              schema: { type: string }
+        "501":
+          description: OTel not enabled (OTEL_ENABLED != true)
+
+  /api/workflows:
+    get:
+      summary: List workflows
+      operationId: listWorkflows
+      tags: [Workflows]
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Paginated workflow list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Workflow" }
+                  limit: { type: integer }
+                  offset: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+
+    post:
+      summary: Create workflow
+      description: Compiles the DSL and stores DSL source + IR. Roles: admin, author.
+      operationId: createWorkflow
+      tags: [Workflows]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, dsl]
+              properties:
+                name: { type: string }
+                dsl: { type: string }
+      responses:
+        "201":
+          description: Workflow created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  name: { type: string }
+                  version: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422":
+          description: DSL compilation failed
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items: { $ref: "#/components/schemas/CompileError" }
+
+  /api/workflows/{id}:
+    get:
+      summary: Get workflow detail (with version history)
+      operationId: getWorkflow
+      tags: [Workflows]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Workflow" }
+          description: Workflow detail
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/workflows/{id}/compile:
+    post:
+      summary: Validate and compile DSL (no run initiated)
+      operationId: compileWorkflow
+      tags: [Workflows]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [dsl]
+              properties:
+                dsl: { type: string }
+      responses:
+        "200":
+          description: Compile result
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CompileResult" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/workflows/{id}/runs:
+    post:
+      summary: Initiate a workflow run
+      operationId: startRun
+      tags: [Workflows, Runs]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                params: { type: object, additionalProperties: true }
+      responses:
+        "202":
+          description: Run initiated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  runId: { type: string }
+                  temporalWorkflowId: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/workflows/{id}/promote:
+    post:
+      summary: Promote current workflow version (admin only)
+      operationId: promoteWorkflow
+      tags: [Workflows]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  version: { type: string }
+                  promoted: { type: boolean }
+          description: Promoted
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/agents:
+    get:
+      summary: List agents
+      operationId: listAgents
+      tags: [Agents]
+      responses:
+        "200":
+          description: Agent list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Agent" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+    post:
+      summary: Create agent
+      operationId: createAgent
+      tags: [Agents]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, model, system_prompt]
+              properties:
+                name:
+                  type: string
+                  pattern: '^[a-z][a-z0-9-]{0,62}$'
+                model:
+                  type: string
+                system_prompt:
+                  type: string
+                  maxLength: 32768
+                max_tokens:
+                  type: integer
+                  minimum: 1
+                  maximum: 128000
+                temperature:
+                  type: number
+                  minimum: 0
+                  maximum: 2
+                retries:
+                  type: integer
+                  minimum: 0
+                  maximum: 10
+      responses:
+        "201":
+          description: Agent created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string, format: uuid }
+                  version: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/agents/{id}:
+    get:
+      summary: Get agent detail
+      operationId: getAgent
+      tags: [Agents]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Agent detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Agent" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    put:
+      summary: Update agent (creates new version)
+      operationId: updateAgent
+      tags: [Agents]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model: { type: string }
+                system_prompt: { type: string }
+                max_tokens: { type: integer }
+                temperature: { type: number }
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  version: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/agents/{id}/promote:
+    post:
+      summary: Promote current agent version (admin only)
+      operationId: promoteAgent
+      tags: [Agents]
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Promoted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: string }
+                  version: { type: string }
+                  promoted: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/runs:
+    get:
+      summary: List all runs (paginated, filterable)
+      operationId: listRuns
+      tags: [Runs]
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [running, succeeded, failed, awaiting_gate] }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50 }
+        - in: query
+          name: offset
+          schema: { type: integer, default: 0 }
+      responses:
+        "200":
+          description: Run list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Run" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/runs/{runId}:
+    get:
+      summary: Get run detail with step timeline
+      operationId: getRun
+      tags: [Runs]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Run detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Run" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/runs/{runId}/artifacts/{key}:
+    get:
+      summary: Presigned redirect to artifact in SeaweedFS (15-min TTL)
+      operationId: getArtifact
+      tags: [Runs]
+      parameters:
+        - in: path
+          name: runId
+          required: true
+          schema: { type: string }
+        - in: path
+          name: key
+          required: true
+          schema: { type: string }
+          description: "Artifact key, e.g. runs/{runId}/{stepId}/output/result.json"
+      responses:
+        "302":
+          description: Redirect to presigned SeaweedFS URL
+          headers:
+            Location: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/gates:
+    get:
+      summary: List pending gates across all runs
+      operationId: listGates
+      tags: [Gates]
+      responses:
+        "200":
+          description: Gate list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Gate" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/gates/{gateId}/approve:
+    post:
+      summary: Approve a gate (roles: admin, reviewer)
+      operationId: approveGate
+      tags: [Gates]
+      parameters:
+        - in: path
+          name: gateId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string }
+      responses:
+        "200":
+          description: Gate approved
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: Gate already resolved
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/gates/{gateId}/reject:
+    post:
+      summary: Reject a gate (roles: admin, reviewer)
+      operationId: rejectGate
+      tags: [Gates]
+      parameters:
+        - in: path
+          name: gateId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                notes: { type: string }
+      responses:
+        "200":
+          description: Gate rejected
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/metrics:
+    get:
+      summary: Aggregate run and token metrics
+      operationId: getMetrics
+      tags: [Metrics]
+      parameters:
+        - in: query
+          name: workflow_id
+          schema: { type: string }
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+      responses:
+        "200":
+          description: Metrics
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Metrics" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/secrets:
+    get:
+      summary: List managed secret names (values never returned)
+      operationId: listSecrets
+      tags: [Secrets]
+      responses:
+        "200":
+          description: Secret names
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Secret" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+    post:
+      summary: Create or rotate a K8s secret (admin only)
+      operationId: createSecret
+      tags: [Secrets]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, value]
+              properties:
+                name:
+                  type: string
+                  pattern: '^[a-z][a-z0-9-]*$'
+                  description: Lowercase alphanumeric with hyphens
+                value:
+                  type: string
+                  description: Secret value (written to K8s, never logged)
+      responses:
+        "201":
+          description: Secret created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/secrets/{name}:
+    delete:
+      summary: Delete a K8s secret (admin only)
+      operationId: deleteSecret
+      tags: [Secrets]
+      parameters:
+        - in: path
+          name: name
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+tags:
+  - name: Workflows
+  - name: Agents
+  - name: Runs
+  - name: Gates
+  - name: Metrics
+  - name: Secrets

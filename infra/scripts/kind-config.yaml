@@ -1,0 +1,37 @@
+# Kind cluster configuration for Tanzen development
+# Used by bootstrap.sh when --new-cluster is passed.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: tanzen-dev
+
+nodes:
+  - role: control-plane
+    # Port mappings for local ingress access
+    extraPortMappings:
+      - containerPort: 80
+        hostPort: 80
+        protocol: TCP
+      - containerPort: 443
+        hostPort: 443
+        protocol: TCP
+      # NodePort range for direct service access during development
+      - containerPort: 30000
+        hostPort: 30000
+        protocol: TCP
+    kubeadmConfigPatches:
+      - |
+        kind: InitConfiguration
+        nodeRegistration:
+          kubeletExtraArgs:
+            node-labels: "ingress-ready=true"
+
+  # Optional: add a worker node for more realistic scheduling
+  # Uncomment if your machine has sufficient resources (8GB+ RAM recommended)
+  # - role: worker
+  # - role: worker
+
+networking:
+  # Disable default CNI so we can install a specific one (kind default: kindnet)
+  # disableDefaultCNI: false
+  podSubnet: "10.244.0.0/16"
+  serviceSubnet: "10.96.0.0/12"

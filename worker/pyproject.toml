@@ -1,0 +1,47 @@
+[project]
+name = "tanzen-worker"
+version = "0.1.0"
+description = "Tanzen Temporal dynamic workflow worker"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.12"
+dependencies = [
+    "temporalio>=1.7.0",
+    "boto3>=1.34.0",
+    "pydantic>=2.7.0",
+    "pydantic-ai>=0.2",
+    "redis>=5.0",
+    "opentelemetry-sdk>=1.24",
+    "opentelemetry-exporter-prometheus>=0.45b0",
+    "httpx>=0.27.0",
+    "jinja2>=3.1",
+    "asyncpg>=0.29.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+]
+
+[project.scripts]
+tanzen-worker = "tanzen_worker.worker:main"
+
+# Extension entry point — allows importlib.metadata discovery of the SDK.
+# Third-party packages can declare "tanzen.worker.extensions" entry points
+# as an alternative to the TANZEN_WORKER_EXTENSIONS env var.
+[project.entry-points."tanzen.worker.extensions"]
+# (none in core — commercial packages register here)
+
+[project.urls]
+Homepage = "https://tanzen.dev"
+Repository = "https://github.com/tanzen-dev/conduit"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tanzen_worker"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

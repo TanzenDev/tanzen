@@ -1,0 +1,86 @@
+/**
+ * MCP server discovery route.
+ *
+ * GET /api/mcp-servers
+ *
+ * Queries the Kubernetes API for Services labeled `tanzen/mcp=true` in the
+ * configured namespace and returns a list of MCP server descriptors including
+ * their in-cluster URLs.
+ *
+ * Falls back to an empty list if the k8s API is unreachable (e.g., local dev
+ * without a cluster).
+ */
+import { Hono } from "hono";
+import * as k8s from "@kubernetes/client-node";
+import type { AuthUser } from "../auth.js";
+
+type Vars = { Variables: { user: AuthUser } };
+const routes = new Hono<Vars>();
+
+const NAMESPACE = process.env["K8S_NAMESPACE"] ?? "tanzen-dev";
+
+let k8sApi: k8s.CoreV1Api | null = null;
+
+function getK8sApi(): k8s.CoreV1Api | null {
+  if (k8sApi) return k8sApi;
+  try {
+    const kc = new k8s.KubeConfig();
+    const proxyUrl = process.env["KUBECTL_PROXY_URL"];
+    if (proxyUrl) {
+      // Local dev: kubectl proxy runs on an HTTP port, no TLS needed.
+      kc.loadFromOptions({
+        clusters: [{ name: "proxy", server: proxyUrl, skipTLSVerify: true }],
+        users: [{ name: "proxy" }],
+        contexts: [{ name: "proxy", cluster: "proxy", user: "proxy" }],
+        currentContext: "proxy",
+      });
+    } else {
+      kc.loadFromDefault();
+    }
+    k8sApi = kc.makeApiClient(k8s.CoreV1Api);
+    return k8sApi;
+  } catch {
+    return null;
+  }
+}
+
+export interface MCPServerItem {
+  name: string;
+  url: string;
+  description: string;
+  transport: string;
+}
+
+// GET /api/mcp-servers
+routes.get("/", async (c) => {
+  const api = getK8sApi();
+  if (!api) {
+    return c.json({ items: [] });
+  }
+
+  try {
+    const response = await api.listNamespacedService({
+      namespace: NAMESPACE,
+      labelSelector: "tanzen/mcp=true",
+    });
+
+    const items: MCPServerItem[] = (response.items ?? []).map((svc) => {
+      const annotations = svc.metadata?.annotations ?? {};
+      const name = annotations["tanzen/mcp-name"] ?? svc.metadata?.name ?? "";
+      const description = annotations["tanzen/mcp-description"] ?? "";
+      const transport = annotations["tanzen/mcp-transport"] ?? "http";
+      const svcName = svc.metadata?.name ?? "";
+      const port = svc.spec?.ports?.[0]?.port ?? 8080;
+      const url = `http://${svcName}.${NAMESPACE}.svc.cluster.local:${port}/mcp`;
+      return { name, url, description, transport };
+    });
+
+    return c.json({ items });
+  } catch (err) {
+    // k8s API unreachable — return empty list rather than 500
+    console.warn("MCP discovery: k8s API unavailable:", err instanceof Error ? err.message : err);
+    return c.json({ items: [] });
+  }
+});
+
+export { routes as mcpServerRoutes };

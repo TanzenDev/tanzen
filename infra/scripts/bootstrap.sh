@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+# =============================================================================
+# Tanzen — Bootstrap Script
+#
+# Sets up all prerequisites on an existing Kind cluster (or creates a new one)
+# and prepares K8s secrets before running Helm.
+#
+# Usage:
+#   ./infra/scripts/bootstrap.sh [OPTIONS]
+#
+# Options:
+#   --namespace NS     Target namespace (default: tanzen-dev)
+#   --cluster NAME     Kind cluster name to create (default: use current context)
+#   --new-cluster      Create a new Kind cluster named by --cluster
+#   --dry-run          Print what would be done without executing
+#
+# Prerequisites (must be on PATH):
+#   kubectl, helm, kind (only if --new-cluster), openssl
+#
+# This script is idempotent: re-running it is safe.
+# =============================================================================
+set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# Defaults
+# ---------------------------------------------------------------------------
+NAMESPACE="${TANZEN_NAMESPACE:-tanzen-dev}"
+CLUSTER_NAME="${TANZEN_CLUSTER:-tanzen-dev}"
+NEW_CLUSTER=false
+DRY_RUN=false
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+CHART_DIR="${REPO_ROOT}/infra/charts/tanzen"
+
+# ---------------------------------------------------------------------------
+# Argument parsing
+# ---------------------------------------------------------------------------
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --namespace)   NAMESPACE="$2";    shift 2 ;;
+    --cluster)     CLUSTER_NAME="$2"; shift 2 ;;
+    --new-cluster) NEW_CLUSTER=true;  shift   ;;
+    --dry-run)     DRY_RUN=true;      shift   ;;
+    *) echo "Unknown option: $1"; exit 1 ;;
+  esac
+done
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+log()  { echo "[$(date -u +%H:%M:%S)] $*"; }
+run()  { if $DRY_RUN; then echo "[dry-run] $*"; else "$@"; fi; }
+need() {
+  for cmd in "$@"; do
+    command -v "$cmd" &>/dev/null || { echo "ERROR: '$cmd' not found on PATH"; exit 1; }
+  done
+}
+
+# ---------------------------------------------------------------------------
+# Prerequisites check
+# ---------------------------------------------------------------------------
+log "Checking prerequisites..."
+need kubectl helm openssl
+if $NEW_CLUSTER; then need kind; fi
+log "Prerequisites OK."
+
+# ---------------------------------------------------------------------------
+# Helm repo setup
+# ---------------------------------------------------------------------------
+log "Adding Helm repositories..."
+run helm repo add cnpg        https://cloudnative-pg.github.io/charts          --force-update
+run helm repo add temporal    https://go.temporal.io/helm-charts                --force-update
+run helm repo add bitnami     https://charts.bitnami.com/bitnami                --force-update
+run helm repo add prometheus  https://prometheus-community.github.io/helm-charts --force-update
+run helm repo add kedacore    https://kedacore.github.io/charts                 --force-update
+run helm repo update
+log "Helm repositories updated."
+
+# ---------------------------------------------------------------------------
+# Optional: create a new Kind cluster
+# ---------------------------------------------------------------------------
+if $NEW_CLUSTER; then
+  if kind get clusters 2>/dev/null | grep -q "^${CLUSTER_NAME}$"; then
+    log "Kind cluster '${CLUSTER_NAME}' already exists — skipping creation."
+  else
+    log "Creating Kind cluster '${CLUSTER_NAME}'..."
+    run kind create cluster --name "${CLUSTER_NAME}" \
+      --config "${SCRIPT_DIR}/kind-config.yaml"
+    log "Cluster created. Current context: $(kubectl config current-context)"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# Namespace
+# ---------------------------------------------------------------------------
+log "Ensuring namespace '${NAMESPACE}' exists..."
+if kubectl get namespace "${NAMESPACE}" &>/dev/null; then
+  log "Namespace '${NAMESPACE}' already exists — skipping."
+else
+  run kubectl create namespace "${NAMESPACE}"
+  log "Namespace '${NAMESPACE}' created."
+fi
+
+# ---------------------------------------------------------------------------
+# Install cluster-level operators (KEDA, CloudNativePG)
+# These are cluster-scoped and installed into their own namespaces.
+# ---------------------------------------------------------------------------
+log "Installing KEDA operator..."
+if helm status keda -n keda &>/dev/null 2>&1; then
+  log "KEDA already installed — upgrading..."
+  run helm upgrade keda kedacore/keda \
+    --namespace keda \
+    --create-namespace \
+    --wait \
+    --timeout 5m
+else
+  run helm install keda kedacore/keda \
+    --namespace keda \
+    --create-namespace \
+    --wait \
+    --timeout 5m
+fi
+log "KEDA ready."
+
+log "Installing CloudNativePG operator..."
+if helm status cnpg -n cnpg-system &>/dev/null 2>&1; then
+  log "CloudNativePG already installed — upgrading..."
+  run helm upgrade cnpg cnpg/cloudnative-pg \
+    --namespace cnpg-system \
+    --create-namespace \
+    --wait \
+    --timeout 5m
+else
+  run helm install cnpg cnpg/cloudnative-pg \
+    --namespace cnpg-system \
+    --create-namespace \
+    --wait \
+    --timeout 5m
+fi
+log "CloudNativePG ready."
+
+# ---------------------------------------------------------------------------
+# Install NGINX ingress controller (required for Grafana ingress in dev)
+# ---------------------------------------------------------------------------
+log "Installing NGINX ingress controller..."
+if helm status ingress-nginx -n ingress-nginx &>/dev/null 2>&1; then
+  log "NGINX ingress already installed — skipping."
+else
+  run helm install ingress-nginx ingress-nginx/ingress-nginx \
+    --namespace ingress-nginx \
+    --create-namespace \
+    --wait \
+    --timeout 5m \
+    --set controller.service.type=NodePort \
+    2>/dev/null || \
+  # Add the ingress-nginx repo if it's missing
+  (helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx --force-update && \
+   helm repo update && \
+   run helm install ingress-nginx ingress-nginx/ingress-nginx \
+     --namespace ingress-nginx \
+     --create-namespace \
+     --wait \
+     --timeout 5m \
+     --set controller.service.type=NodePort)
+fi
+log "NGINX ingress ready."
+
+# ---------------------------------------------------------------------------
+# Generate and store secrets
+# Idempotent: skips secret creation if the secret already exists.
+# ---------------------------------------------------------------------------
+gen_password() { openssl rand -base64 24 | tr -dc 'a-zA-Z0-9' | head -c 32; }
+
+create_secret_if_missing() {
+  local name="$1"; local namespace="$2"; shift 2
+  if kubectl get secret "${name}" -n "${namespace}" &>/dev/null; then
+    log "Secret '${name}' already exists in '${namespace}' — skipping."
+  else
+    run kubectl create secret generic "${name}" -n "${namespace}" "$@"
+    # Add Helm adoption labels/annotations so helm upgrade --install can own the secret
+    kubectl annotate secret "${name}" -n "${namespace}" \
+      meta.helm.sh/release-name=tanzen \
+      meta.helm.sh/release-namespace="${namespace}" \
+      --overwrite &>/dev/null
+    kubectl label secret "${name}" -n "${namespace}" \
+      app.kubernetes.io/managed-by=Helm \
+      --overwrite &>/dev/null
+    log "Secret '${name}' created."
+  fi
+}
+
+log "Generating secrets..."
+
+TEMPORAL_DB_PASS=$(gen_password)
+TANZEN_DB_PASS=$(gen_password)
+SEAWEEDFS_DB_PASS=$(gen_password)
+SEAWEEDFS_ACCESS_KEY=$(gen_password)
+SEAWEEDFS_SECRET_KEY=$(gen_password)
+GRAFANA_ADMIN_PASS=$(gen_password)
+
+create_secret_if_missing temporal-db-credentials "${NAMESPACE}" \
+  --from-literal=username=temporal_user \
+  --from-literal=password="${TEMPORAL_DB_PASS}"
+
+create_secret_if_missing tanzen-db-credentials "${NAMESPACE}" \
+  --from-literal=username=tanzen_user \
+  --from-literal=password="${TANZEN_DB_PASS}"
+
+create_secret_if_missing seaweedfs-db-credentials "${NAMESPACE}" \
+  --from-literal=username=seaweedfs_user \
+  --from-literal=password="${SEAWEEDFS_DB_PASS}"
+
+create_secret_if_missing seaweedfs-s3-credentials "${NAMESPACE}" \
+  --from-literal=access_key="${SEAWEEDFS_ACCESS_KEY}" \
+  --from-literal=secret_key="${SEAWEEDFS_SECRET_KEY}"
+
+create_secret_if_missing grafana-admin-credentials "${NAMESPACE}" \
+  --from-literal=admin-password="${GRAFANA_ADMIN_PASS}"
+
+log "Secrets ready."
+
+# ---------------------------------------------------------------------------
+# Apply Grafana dashboard ConfigMap (namespace substitution)
+# ---------------------------------------------------------------------------
+log "Applying Grafana dashboard ConfigMap..."
+DASHBOARD_CM="${REPO_ROOT}/infra/deps/grafana/dashboards-configmap.yaml"
+if [ -f "${DASHBOARD_CM}" ]; then
+  run sed "s/{{ NAMESPACE }}/${NAMESPACE}/g" "${DASHBOARD_CM}" | \
+    kubectl apply -n "${NAMESPACE}" -f -
+  # Add Helm adoption labels so helm upgrade --install can own the ConfigMap
+  kubectl annotate configmap tanzen-grafana-dashboards -n "${NAMESPACE}" \
+    meta.helm.sh/release-name=tanzen \
+    meta.helm.sh/release-namespace="${NAMESPACE}" \
+    --overwrite &>/dev/null
+  kubectl label configmap tanzen-grafana-dashboards -n "${NAMESPACE}" \
+    app.kubernetes.io/managed-by=Helm \
+    --overwrite &>/dev/null
+fi
+
+# ---------------------------------------------------------------------------
+# Helm install / upgrade of the Tanzen umbrella chart
+# ---------------------------------------------------------------------------
+log "Running helm dependency update..."
+run helm dependency update "${CHART_DIR}"
+
+log "Installing / upgrading Tanzen chart into namespace '${NAMESPACE}'..."
+run helm upgrade --install tanzen "${CHART_DIR}" \
+  --namespace "${NAMESPACE}" \
+  --create-namespace \
+  --values "${CHART_DIR}/values.yaml" \
+  --set "global.namespace=${NAMESPACE}" \
+  --wait \
+  --timeout 10m
+
+log "Helm install complete."
+
+# ---------------------------------------------------------------------------
+# Post-install: register Temporal 'default' namespace
+# ---------------------------------------------------------------------------
+log "Registering Temporal 'default' namespace..."
+# Wait for admintools pod to be ready
+run kubectl wait --for=condition=ready pod \
+  -l app.kubernetes.io/component=admintools \
+  -n "${NAMESPACE}" \
+  --timeout=120s
+
+# Check if namespace already exists before registering
+if kubectl exec -n "${NAMESPACE}" \
+    deploy/temporal-admintools -- \
+    tctl --address temporal-frontend:7233 namespace describe default \
+    &>/dev/null 2>&1; then
+  log "Temporal 'default' namespace already registered."
+else
+  run kubectl exec -n "${NAMESPACE}" \
+    deploy/temporal-admintools -- \
+    tctl --address temporal-frontend:7233 namespace register default
+  log "Temporal 'default' namespace registered."
+fi
+
+# ---------------------------------------------------------------------------
+# Completion summary
+# ---------------------------------------------------------------------------
+echo ""
+echo "============================================================"
+echo "  Tanzen infrastructure deployed successfully!"
+echo "============================================================"
+echo ""
+echo "  Namespace:    ${NAMESPACE}"
+echo ""
+echo "  Grafana admin password (save this):"
+echo "    kubectl get secret grafana-admin-credentials -n ${NAMESPACE} \\"
+echo "      -o jsonpath='{.data.admin-password}' | base64 -d && echo"
+echo ""
+echo "  Access Grafana (dev):"
+echo "    kubectl port-forward -n ${NAMESPACE} svc/tanzen-grafana 3000:80"
+echo "    Then open: http://grafana.tanzen.local"
+echo "    (Add '127.0.0.1 grafana.tanzen.local' to /etc/hosts)"
+echo ""
+echo "  Access Temporal Web UI (internal only):"
+echo "    kubectl port-forward -n ${NAMESPACE} svc/temporal-web 8080:8080"
+echo "    Then open: http://localhost:8080"
+echo ""
+echo "  Run smoke tests:"
+echo "    ./infra/scripts/smoke-test.sh --namespace ${NAMESPACE}"
+echo ""

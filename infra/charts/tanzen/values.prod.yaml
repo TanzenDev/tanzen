@@ -1,0 +1,95 @@
+# =============================================================================
+# Tanzen — Production value overrides
+# Usage: helm upgrade --install tanzen ./infra/charts/tanzen \
+#          -f infra/charts/tanzen/values.yaml \
+#          -f infra/charts/tanzen/values.prod.yaml
+# =============================================================================
+
+global:
+  namespace: tanzen
+  imagePullPolicy: Always
+  storageClass: "fast-ssd"  # Replace with your storage class
+
+# PostgreSQL: 3-instance cluster with streaming replication
+postgres:
+  instances: 3
+  storage:
+    size: 100Gi
+
+# Temporal: 3 frontend replicas
+temporal:
+  server:
+    replicaCount: 3
+  web:
+    replicaCount: 2
+
+# Redis: enable auth in prod
+redis:
+  auth:
+    enabled: true
+    existingSecret: redis-auth-credentials
+    existingSecretPasswordKey: password
+  master:
+    persistence:
+      enabled: false  # Still pub/sub only; no persistence needed
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+      limits:
+        memory: 1Gi
+
+# SeaweedFS: larger volumes
+seaweedfs:
+  volume:
+    replicaCount: 3
+    storage:
+      size: 500Gi
+  master:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+  volume:
+    resources:
+      requests:
+        cpu: 1000m
+        memory: 1Gi
+  filer:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 512Mi
+
+# KEDA: production scaling limits
+keda:
+  scaledObject:
+    maxReplicaCount: 50
+
+# Observability
+kube-prometheus-stack:
+  grafana:
+    persistence:
+      enabled: true
+      size: 10Gi
+    ingress:
+      enabled: true
+      annotations:
+        cert-manager.io/cluster-issuer: letsencrypt-prod
+      tls:
+        - secretName: grafana-tls
+          hosts:
+            - grafana.tanzen.example.com  # Replace with your domain
+      hosts:
+        - grafana.tanzen.example.com
+
+  prometheus:
+    prometheusSpec:
+      retention: 30d
+      storageSpec:
+        volumeClaimTemplate:
+          spec:
+            accessModes: ["ReadWriteOnce"]
+            resources:
+              requests:
+                storage: 100Gi

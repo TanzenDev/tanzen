@@ -1,0 +1,345 @@
+# =============================================================================
+# Tanzen Helm Chart — Default values (local / CI dev profile)
+# Override with values.prod.yaml for production deployments.
+# =============================================================================
+
+# ---------------------------------------------------------------------------
+# Global settings
+# ---------------------------------------------------------------------------
+global:
+  # Kubernetes namespace for all Tanzen resources.
+  # Change to avoid colliding with an existing 'tanzen' namespace.
+  namespace: tanzen-dev
+
+  # Image pull policy for all Tanzen-managed containers.
+  imagePullPolicy: IfNotPresent
+
+  # Storage class — empty string uses the cluster default.
+  storageClass: ""
+
+# ---------------------------------------------------------------------------
+# CloudNativePG operator sub-chart
+# ---------------------------------------------------------------------------
+cnpg:
+  # Disabled: the CNPG operator is installed cluster-wide by bootstrap.sh.
+  # This flag guards only the sub-chart inclusion; the postgres.yaml Cluster
+  # resource is controlled separately by the postgres section below.
+  enabled: false
+
+# ---------------------------------------------------------------------------
+# PostgreSQL Cluster (managed by CloudNativePG)
+# Configured via infra/deps/cnpg/cluster.yaml template rendered by this chart.
+# ---------------------------------------------------------------------------
+postgres:
+  enabled: true
+  instances: 1          # 1 for dev; 3 for prod (streaming replication)
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  storage:
+    size: 10Gi
+  # Credentials are stored in K8s Secrets; these are the secret names only.
+  temporalSecretName: temporal-db-credentials
+  tanzanSecretName: tanzen-db-credentials
+
+# ---------------------------------------------------------------------------
+# Temporal Server sub-chart overrides
+# ---------------------------------------------------------------------------
+temporal:
+  enabled: true
+
+  server:
+    replicaCount: 1
+
+    config:
+      persistence:
+        default:
+          driver: sql
+          sql:
+            driver: postgres12
+            # Points at the CloudNativePG read-write service
+            host: tanzen-postgres-rw
+            port: 5432
+            database: temporal
+            user: temporal_user
+            existingSecret: temporal-db-credentials
+            secretKey: password
+            maxConns: 20
+            maxConnLifetime: "1h"
+        visibility:
+          driver: sql
+          sql:
+            driver: postgres12
+            host: tanzen-postgres-rw
+            port: 5432
+            database: temporal_visibility
+            user: temporal_user
+            existingSecret: temporal-db-credentials
+            secretKey: password
+            maxConns: 5
+            maxConnLifetime: "1h"
+
+  # Schema job disabled — databases and schemas pre-created by bootstrap.sh
+  # and applied once via admintools (temporal-sql-tool). The job's
+  # create-database step fails against CNPG because temporal_user lacks CREATEDB.
+  schema:
+    createDatabase:
+      enabled: false
+    setup:
+      enabled: false
+    update:
+      enabled: false
+
+  # Disable bundled datastores not needed
+  cassandra:
+    enabled: false
+  mysql:
+    enabled: false
+  postgresql:
+    enabled: false
+  elasticsearch:
+    enabled: false
+
+  # Disable Temporal's bundled Grafana and Prometheus — Tanzen uses
+  # kube-prometheus-stack to avoid duplicate ServiceAccount naming conflicts.
+  grafana:
+    enabled: false
+  prometheus:
+    enabled: false
+
+  web:
+    enabled: true
+    replicaCount: 1
+    service:
+      type: ClusterIP
+      port: 8080
+    # NOT exposed externally; access via: kubectl port-forward svc/temporal-web 8080:8080
+
+  admintools:
+    enabled: true
+
+# ---------------------------------------------------------------------------
+# Redis sub-chart overrides
+# ---------------------------------------------------------------------------
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false    # Internal only in dev; enable in prod via values.prod.yaml
+  master:
+    persistence:
+      enabled: false  # Pub/sub only — no durability needed
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 256Mi
+  service:
+    port: 6379
+
+# ---------------------------------------------------------------------------
+# SeaweedFS (custom templates — no sub-chart)
+# ---------------------------------------------------------------------------
+seaweedfs:
+  enabled: true
+
+  master:
+    image: chrislusf/seaweedfs:3.73
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    service:
+      httpPort: 9333
+      grpcPort: 19333
+
+  volume:
+    image: chrislusf/seaweedfs:3.73
+    replicaCount: 1
+    storage:
+      size: 20Gi
+    resources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+
+  filer:
+    image: chrislusf/seaweedfs:3.73
+    replicaCount: 1
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+    service:
+      httpPort: 8888
+      grpcPort: 18888
+
+  # S3 credentials secret — created by bootstrap.sh before helm install
+  s3CredentialsSecret: seaweedfs-s3-credentials
+
+  # Buckets to create on first install (post-install Job)
+  buckets:
+    - workflows
+    - agents
+    - artifacts
+    - scripts
+
+# ---------------------------------------------------------------------------
+# KEDA (installed separately by bootstrap.sh via its own Helm chart)
+# ScaledObject configuration — references the Python worker Deployment (M3)
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Tanzen Worker (Python Temporal worker)
+# ---------------------------------------------------------------------------
+worker:
+  replicaCount: 1
+  image:
+    repository: tanzen-worker
+    tag: latest
+  temporal:
+    host: "tanzen-temporal-frontend:7233"
+    namespace: "default"
+    taskQueue: "tanzen-worker"
+  s3:
+    endpointUrl: "http://seaweedfs-filer:8333"
+    artifactsBucket: "artifacts"
+    agentsBucket: "agents"
+    scriptsBucket: "scripts"
+  redisUrl: "redis://tanzen-redis-master:6379"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# ---------------------------------------------------------------------------
+# MCP (Model Context Protocol) servers
+# ---------------------------------------------------------------------------
+mcp:
+  sequentialThinking:
+    enabled: true
+    image: mcp-sequential-thinking:latest
+    port: 8080
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+  fetch:
+    enabled: true
+    image: mcp-fetch:latest
+    port: 8080
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+
+  falkordb:
+    enabled: true
+    mcpImage: mcp-falkordb:latest
+    mcpPort: 8080
+    dbImage: falkordb/falkordb:latest
+    dbPort: 6379
+    storage: 5Gi
+    mcpResources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        memory: 128Mi
+    dbResources:
+      requests:
+        cpu: 100m
+        memory: 256Mi
+      limits:
+        memory: 512Mi
+
+keda:
+  scaledObject:
+    enabled: false
+    workerDeploymentName: tanzen-worker
+    minReplicaCount: 0
+    maxReplicaCount: 10
+    pollingInterval: 15
+    temporalFrontendAddress: "tanzen-temporal-frontend:7233"
+    temporalNamespace: "default"
+    temporalTaskQueue: "tanzen-worker"
+
+# ---------------------------------------------------------------------------
+# Observability — kube-prometheus-stack sub-chart overrides
+# ---------------------------------------------------------------------------
+monitoring:
+  enabled: true
+
+kube-prometheus-stack:
+  grafana:
+    enabled: true
+    adminPassword: ""  # Overridden by grafana-admin-credentials Secret in bootstrap.sh
+    existingSecret: grafana-admin-credentials
+    adminUser: admin
+    persistence:
+      enabled: false  # Dev; enable with storageClass in prod
+    service:
+      type: ClusterIP
+    ingress:
+      enabled: true
+      ingressClassName: nginx
+      hosts:
+        - grafana.tanzen.local
+      paths:
+        - /
+    dashboardProviders:
+      dashboardproviders.yaml:
+        apiVersion: 1
+        providers:
+          - name: tanzen
+            orgId: 1
+            folder: Tanzen
+            type: file
+            disableDeletion: true
+            editable: false
+            options:
+              path: /var/lib/grafana/dashboards/tanzen
+    dashboardsConfigMaps:
+      tanzen: tanzen-grafana-dashboards
+
+  prometheus:
+    prometheusSpec:
+      scrapeInterval: 30s
+      evaluationInterval: 30s
+      retention: 7d
+      storageSpec: {}  # In-memory for dev
+      additionalScrapeConfigs:
+        - job_name: temporal
+          static_configs:
+            - targets: ["temporal-frontend:9090"]
+          metrics_path: /metrics
+        - job_name: seaweedfs
+          static_configs:
+            - targets: ["seaweedfs-master:9333"]
+          metrics_path: /metrics
+        - job_name: tanzen-api
+          static_configs:
+            - targets: ["tanzen-api:9464"]   # populated in M5
+          metrics_path: /metrics
+        - job_name: tanzen-worker
+          static_configs:
+            - targets: ["tanzen-worker:9464"]  # populated in M3
+          metrics_path: /metrics
+
+  alertmanager:
+    enabled: false   # Not needed for dev
+
+  # Reduce noise in dev
+  defaultRules:
+    create: true
+    rules:
+      alertmanager: false
+      etcd: false
+      configReloaders: false
+      kubeScheduler: false

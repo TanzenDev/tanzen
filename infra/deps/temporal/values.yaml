@@ -1,0 +1,112 @@
+# =============================================================================
+# Temporal Helm chart value overrides for Tanzen
+# Applied via: helm install tanzen ./infra/charts/tanzen (merged via Chart.yaml deps)
+# Reference: https://github.com/temporalio/helm-charts
+# =============================================================================
+
+server:
+  replicaCount: 1
+
+  config:
+    persistence:
+      default:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: tanzen-postgres-rw
+          port: 5432
+          database: temporal
+          user: temporal_user
+          existingSecret: temporal-db-credentials
+          maxConns: 20
+          maxConnLifetime: "1h"
+          tls:
+            enabled: false
+      visibility:
+        driver: sql
+        sql:
+          driver: postgres12
+          host: tanzen-postgres-rw
+          port: 5432
+          database: temporal_visibility
+          user: temporal_user
+          existingSecret: temporal-db-credentials
+          maxConns: 5
+          maxConnLifetime: "1h"
+          tls:
+            enabled: false
+
+  frontend:
+    service:
+      type: ClusterIP
+      port: 7233
+    # Expose Prometheus metrics on port 9090
+    metrics:
+      annotations:
+        enabled: true
+      prometheus:
+        timerType: histogram
+        listenAddress: "0.0.0.0:9090"
+
+  history:
+    replicaCount: 1
+    metrics:
+      annotations:
+        enabled: true
+      prometheus:
+        timerType: histogram
+        listenAddress: "0.0.0.0:9090"
+
+  matching:
+    replicaCount: 1
+
+  worker:
+    replicaCount: 1
+
+# Disable datastores bundled in the chart that we don't use
+cassandra:
+  enabled: false
+
+mysql:
+  enabled: false
+
+postgresql:
+  enabled: false   # We use CloudNativePG instead
+
+elasticsearch:
+  enabled: false
+
+# Schema migration job — disabled because databases and schemas are pre-created
+# by bootstrap.sh and applied manually via admintools (temporal-sql-tool).
+# The schema job's create-database step fails against CNPG because temporal_user
+# lacks CREATEDB; schemas were applied once using admintools and are idempotent.
+schema:
+  setup:
+    enabled: false
+  update:
+    enabled: false
+
+# Temporal Web UI — internal only, no external ingress
+web:
+  enabled: true
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8080
+  # Access: kubectl port-forward -n tanzen-dev svc/temporal-web 8080:8080
+
+# Admin tools — used by smoke test and post-install namespace registration
+admintools:
+  enabled: true
+
+# Disable Temporal's bundled Grafana and Prometheus — Tanzen uses
+# kube-prometheus-stack for observability to avoid naming conflicts.
+grafana:
+  enabled: false
+
+prometheus:
+  enabled: false
+
+# Post-install hook: register the 'default' namespace in Temporal
+# (The Temporal chart does not do this automatically)
+# This is handled in bootstrap.sh after helm install completes.

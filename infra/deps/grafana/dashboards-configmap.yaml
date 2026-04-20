@@ -1,0 +1,157 @@
+# =============================================================================
+# Grafana Dashboard ConfigMaps
+# Provisioned automatically by kube-prometheus-stack via dashboardsConfigMaps.
+# Panels contain placeholder queries — populated with real metrics in M11.
+# =============================================================================
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tanzen-grafana-dashboards
+  namespace: "{{ NAMESPACE }}"   # Replaced by bootstrap.sh
+  labels:
+    app.kubernetes.io/part-of: tanzen
+    grafana_dashboard: "1"
+data:
+  # ---------------------------------------------------------------------------
+  # Dashboard 1: Operations Overview
+  # ---------------------------------------------------------------------------
+  operations.json: |
+    {
+      "title": "Tanzen — Operations Overview",
+      "uid": "tanzen-ops",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1, "type": "stat", "title": "Total Runs (1h)",
+          "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "increase(tanzen_run_total[1h])",
+            "legendFormat": "Runs"
+          }]
+        },
+        {
+          "id": 2, "type": "stat", "title": "Success Rate (1h)",
+          "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "rate(tanzen_run_total{status='succeeded'}[1h]) / rate(tanzen_run_total[1h])",
+            "legendFormat": "Success %"
+          }]
+        },
+        {
+          "id": 3, "type": "stat", "title": "Active Runs",
+          "gridPos": { "x": 12, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "tanzen_run_total{status='running'}",
+            "legendFormat": "Active"
+          }]
+        },
+        {
+          "id": 4, "type": "stat", "title": "Pending Gates",
+          "gridPos": { "x": 18, "y": 0, "w": 6, "h": 4 },
+          "targets": [{
+            "expr": "tanzen_gate_pending_total",
+            "legendFormat": "Pending"
+          }]
+        },
+        {
+          "id": 5, "type": "timeseries", "title": "Run Volume by Workflow",
+          "gridPos": { "x": 0, "y": 4, "w": 24, "h": 8 },
+          "targets": [{
+            "expr": "rate(tanzen_run_total[5m])",
+            "legendFormat": "{{ workflow }}"
+          }]
+        }
+      ]
+    }
+
+  # ---------------------------------------------------------------------------
+  # Dashboard 2: Cost and Latency
+  # ---------------------------------------------------------------------------
+  cost-latency.json: |
+    {
+      "title": "Tanzen — Cost & Latency",
+      "uid": "tanzen-cost",
+      "schemaVersion": 39,
+      "refresh": "60s",
+      "time": { "from": "now-24h", "to": "now" },
+      "panels": [
+        {
+          "id": 1, "type": "timeseries", "title": "Token Cost by Workflow (USD/hr)",
+          "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+          "targets": [{
+            "expr": "rate(tanzen_step_token_cost_usd_total[1h])",
+            "legendFormat": "{{ workflow }}"
+          }]
+        },
+        {
+          "id": 2, "type": "timeseries", "title": "Step Latency P95 (seconds)",
+          "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+          "targets": [{
+            "expr": "histogram_quantile(0.95, rate(tanzen_run_duration_seconds_bucket[5m]))",
+            "legendFormat": "p95 {{ workflow }}"
+          }]
+        },
+        {
+          "id": 3, "type": "timeseries", "title": "Token Consumption by Model",
+          "gridPos": { "x": 0, "y": 8, "w": 24, "h": 8 },
+          "targets": [{
+            "expr": "rate(tanzen_step_token_count_total[5m])",
+            "legendFormat": "{{ model }}"
+          }]
+        }
+      ]
+    }
+
+  # ---------------------------------------------------------------------------
+  # Dashboard 3: Infrastructure
+  # ---------------------------------------------------------------------------
+  infrastructure.json: |
+    {
+      "title": "Tanzen — Infrastructure",
+      "uid": "tanzen-infra",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-1h", "to": "now" },
+      "panels": [
+        {
+          "id": 1, "type": "timeseries", "title": "Worker Pod Count vs Queue Depth",
+          "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 },
+          "targets": [
+            {
+              "expr": "kube_deployment_status_replicas_available{deployment='tanzen-worker'}",
+              "legendFormat": "Worker Pods"
+            },
+            {
+              "expr": "tanzen_worker_queue_depth",
+              "legendFormat": "Queue Depth"
+            }
+          ]
+        },
+        {
+          "id": 2, "type": "stat", "title": "SeaweedFS Storage Used",
+          "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+          "targets": [{
+            "expr": "tanzen_artifact_bytes_total",
+            "legendFormat": "{{ bucket }}"
+          }]
+        },
+        {
+          "id": 3, "type": "timeseries", "title": "Postgres Connections",
+          "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+          "targets": [{
+            "expr": "cnpg_backends_total",
+            "legendFormat": "Connections"
+          }]
+        },
+        {
+          "id": 4, "type": "timeseries", "title": "Redis Pub/Sub Messages/sec",
+          "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+          "targets": [{
+            "expr": "rate(redis_pubsub_channels[1m])",
+            "legendFormat": "Channels"
+          }]
+        }
+      ]
+    }

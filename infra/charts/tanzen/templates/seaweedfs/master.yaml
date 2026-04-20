@@ -1,0 +1,82 @@
+{{- if .Values.seaweedfs.enabled }}
+# =============================================================================
+# SeaweedFS — Master Server
+# Responsible for volume location tracking and metadata coordination.
+# =============================================================================
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: seaweedfs-master
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: seaweedfs-master
+    app.kubernetes.io/component: master
+    app.kubernetes.io/part-of: tanzen
+spec:
+  replicas: {{ .Values.seaweedfs.master.replicaCount }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: seaweedfs-master
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: seaweedfs-master
+        app.kubernetes.io/component: master
+        app.kubernetes.io/part-of: tanzen
+    spec:
+      containers:
+        - name: seaweedfs-master
+          image: {{ .Values.seaweedfs.master.image }}
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          args:
+            - master
+            - -port={{ .Values.seaweedfs.master.service.httpPort }}
+            - -mdir=/data
+            - -defaultReplication=000  # Single copy in dev; change to 010 for prod
+          ports:
+            - name: http
+              containerPort: {{ .Values.seaweedfs.master.service.httpPort }}
+            - name: grpc
+              containerPort: {{ .Values.seaweedfs.master.service.grpcPort }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            {{- toYaml .Values.seaweedfs.master.resources | nindent 12 }}
+          livenessProbe:
+            httpGet:
+              path: /cluster/status
+              port: http
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /cluster/status
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: data
+          emptyDir: {}   # Master metadata is small and rebuildable from volume servers
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: seaweedfs-master
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: seaweedfs-master
+    app.kubernetes.io/component: master
+    app.kubernetes.io/part-of: tanzen
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: seaweedfs-master
+  ports:
+    - name: http
+      port: {{ .Values.seaweedfs.master.service.httpPort }}
+      targetPort: http
+    - name: grpc
+      port: {{ .Values.seaweedfs.master.service.grpcPort }}
+      targetPort: grpc
+{{- end }}

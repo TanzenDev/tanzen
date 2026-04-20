@@ -1,0 +1,82 @@
+{
+  "name": "@tanzen/server-core",
+  "version": "0.1.0",
+  "description": "Tanzen API server core — Hono on Bun with plugin extension points",
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "test": "bun test",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && tsc-alias -p tsconfig.build.json",
+    "prepublishOnly": "bun run build && bun run typecheck"
+  },
+  "exports": {
+    ".": {
+      "bun": "./src/server/index.ts",
+      "import": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts"
+    },
+    "./auth": {
+      "bun": "./src/server/auth.ts",
+      "import": "./dist/server/auth.js",
+      "types": "./dist/server/auth.d.ts"
+    },
+    "./db": {
+      "bun": "./src/server/db.ts",
+      "import": "./dist/server/db.js",
+      "types": "./dist/server/db.d.ts"
+    },
+    "./s3": {
+      "bun": "./src/server/s3.ts",
+      "import": "./dist/server/s3.js",
+      "types": "./dist/server/s3.d.ts"
+    },
+    "./src/server/index.js": {
+      "bun": "./src/server/index.ts",
+      "import": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts"
+    },
+    "./src/server/auth.js": {
+      "bun": "./src/server/auth.ts",
+      "import": "./dist/server/auth.js",
+      "types": "./dist/server/auth.d.ts"
+    },
+    "./src/server/db.js": {
+      "bun": "./src/server/db.ts",
+      "import": "./dist/server/db.js",
+      "types": "./dist/server/db.d.ts"
+    },
+    "./src/server/s3.js": {
+      "bun": "./src/server/s3.ts",
+      "import": "./dist/server/s3.js",
+      "types": "./dist/server/s3.d.ts"
+    }
+  },
+  "main": "./dist/server/index.js",
+  "types": "./dist/server/index.d.ts",
+  "files": [
+    "dist/",
+    "src/"
+  ],
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "@types/bun": "latest",
+    "tsc-alias": "^1.8.0"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1030.0",
+    "@aws-sdk/s3-request-presigner": "^3.1030.0",
+    "@clerk/backend": "^3.2.9",
+    "@hono/node-server": "^1.19.14",
+    "@kubernetes/client-node": "^1.4.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.56.0",
+    "@opentelemetry/exporter-prometheus": "^0.57.0",
+    "@opentelemetry/resources": "^1.30.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@temporalio/client": "^1.16.0",
+    "hono": "^4.12.12",
+    "ioredis": "^5.10.1",
+    "postgres": "^3.4.9"
+  }
+}

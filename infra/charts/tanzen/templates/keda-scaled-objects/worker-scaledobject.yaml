@@ -1,0 +1,47 @@
+{{- if .Values.keda.scaledObject.enabled }}
+# =============================================================================
+# KEDA ScaledObject — Python Worker Autoscaler
+#
+# Target Deployment (tanzen-worker) does not exist until Milestone 3.
+# KEDA will log a warning about the missing target but will not fail.
+# The ScaledObject is deployed now so it is ready the moment the worker
+# Deployment is created in M3.
+# =============================================================================
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: tanzen-worker-scaler
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: tanzen-worker-scaler
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.keda.scaledObject.workerDeploymentName }}
+
+  # Scale to zero when queue is empty; max pods during peak load
+  minReplicaCount: {{ .Values.keda.scaledObject.minReplicaCount }}
+  maxReplicaCount: {{ .Values.keda.scaledObject.maxReplicaCount }}
+
+  # How often KEDA polls the Temporal metrics endpoint (seconds)
+  pollingInterval: {{ .Values.keda.scaledObject.pollingInterval }}
+
+  # Keep at least one pod for 5 minutes after queue drains (warm pod)
+  cooldownPeriod: 300
+
+  triggers:
+    # Temporal task queue depth trigger.
+    # Scales workers based on how many activity tasks are queued.
+    # One worker pod per pending task, up to maxReplicaCount.
+    - type: temporal
+      metadata:
+        endpoint: {{ .Values.keda.scaledObject.temporalFrontendAddress | quote }}
+        namespace: {{ .Values.keda.scaledObject.temporalNamespace | quote }}
+        queueName: {{ .Values.keda.scaledObject.temporalTaskQueue | quote }}
+        queueType: activity
+        # Target 1 pending task per replica — tune in M13 load testing
+        targetQueueSize: "1"
+{{- end }}

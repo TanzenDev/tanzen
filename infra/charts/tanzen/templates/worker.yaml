@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tanzen-worker
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: tanzen-worker
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      app: tanzen-worker
+  template:
+    metadata:
+      labels:
+        app: tanzen-worker
+    spec:
+      containers:
+        - name: tanzen-worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          env:
+            - name: TEMPORAL_HOST
+              value: "{{ .Values.worker.temporal.host }}"
+            - name: TEMPORAL_NAMESPACE
+              value: "{{ .Values.worker.temporal.namespace }}"
+            - name: TASK_QUEUE
+              value: "{{ .Values.worker.temporal.taskQueue }}"
+            - name: S3_ENDPOINT_URL
+              value: "{{ .Values.worker.s3.endpointUrl }}"
+            - name: S3_ARTIFACTS_BUCKET
+              value: "{{ .Values.worker.s3.artifactsBucket }}"
+            - name: S3_AGENTS_BUCKET
+              value: "{{ .Values.worker.s3.agentsBucket }}"
+            - name: S3_SCRIPTS_BUCKET
+              value: "{{ .Values.worker.s3.scriptsBucket }}"
+            - name: S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-s3-credentials
+                  key: access_key
+            - name: S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: seaweedfs-s3-credentials
+                  key: secret_key
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: tanzen-db-credentials
+                  key: username
+            - name: DB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: tanzen-db-credentials
+                  key: password
+            - name: DATABASE_URL
+              value: "postgresql://$(DB_USER):$(DB_PASS)@tanzen-postgres-rw:5432/tanzen"
+            - name: REDIS_URL
+              value: "{{ .Values.worker.redisUrl }}"
+          resources:
+            requests:
+              cpu: {{ .Values.worker.resources.requests.cpu }}
+              memory: {{ .Values.worker.resources.requests.memory }}
+            limits:
+              memory: {{ .Values.worker.resources.limits.memory }}

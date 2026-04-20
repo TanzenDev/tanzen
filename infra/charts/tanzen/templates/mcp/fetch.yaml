@@ -1,0 +1,66 @@
+{{- if .Values.mcp.fetch.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-fetch
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-fetch
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    tanzen/mcp: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-fetch
+  template:
+    metadata:
+      labels:
+        app: mcp-fetch
+        tanzen/mcp: "true"
+    spec:
+      containers:
+        - name: mcp-fetch
+          image: "{{ .Values.mcp.fetch.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mcp.fetch.port }}
+          env:
+            - name: PORT
+              value: "{{ .Values.mcp.fetch.port }}"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.mcp.fetch.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: {{ .Values.mcp.fetch.resources.requests.cpu }}
+              memory: {{ .Values.mcp.fetch.resources.requests.memory }}
+            limits:
+              memory: {{ .Values.mcp.fetch.resources.limits.memory }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-fetch
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-fetch
+    app.kubernetes.io/part-of: tanzen
+    tanzen/mcp: "true"
+  annotations:
+    tanzen/mcp-name: "fetch"
+    tanzen/mcp-description: "URL fetching and web content retrieval"
+    tanzen/mcp-transport: "http"
+spec:
+  selector:
+    app: mcp-fetch
+  ports:
+    - port: {{ .Values.mcp.fetch.port }}
+      targetPort: {{ .Values.mcp.fetch.port }}
+  type: ClusterIP
+{{- end }}

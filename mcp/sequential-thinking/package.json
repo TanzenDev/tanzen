@@ -1,0 +1,11 @@
+{
+  "name": "mcp-sequential-thinking",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "server.js",
+  "scripts": { "start": "node server.js" },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.10.2",
+    "express": "^4.21.0"
+  }
+}

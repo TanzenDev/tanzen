@@ -1,0 +1,66 @@
+{{- if .Values.mcp.sequentialThinking.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-sequential-thinking
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-sequential-thinking
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    tanzen/mcp: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-sequential-thinking
+  template:
+    metadata:
+      labels:
+        app: mcp-sequential-thinking
+        tanzen/mcp: "true"
+    spec:
+      containers:
+        - name: mcp-sequential-thinking
+          image: "{{ .Values.mcp.sequentialThinking.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mcp.sequentialThinking.port }}
+          env:
+            - name: PORT
+              value: "{{ .Values.mcp.sequentialThinking.port }}"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: {{ .Values.mcp.sequentialThinking.port }}
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            requests:
+              cpu: {{ .Values.mcp.sequentialThinking.resources.requests.cpu }}
+              memory: {{ .Values.mcp.sequentialThinking.resources.requests.memory }}
+            limits:
+              memory: {{ .Values.mcp.sequentialThinking.resources.limits.memory }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-sequential-thinking
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-sequential-thinking
+    app.kubernetes.io/part-of: tanzen
+    tanzen/mcp: "true"
+  annotations:
+    tanzen/mcp-name: "sequential-thinking"
+    tanzen/mcp-description: "Sequential reasoning and step-by-step planning"
+    tanzen/mcp-transport: "http"
+spec:
+  selector:
+    app: mcp-sequential-thinking
+  ports:
+    - port: {{ .Values.mcp.sequentialThinking.port }}
+      targetPort: {{ .Values.mcp.sequentialThinking.port }}
+  type: ClusterIP
+{{- end }}

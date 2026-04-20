@@ -1,0 +1,140 @@
+{
+  "uid": "tanzen-infrastructure",
+  "title": "Tanzen — Infrastructure",
+  "schemaVersion": 36,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "pluginId": "prometheus",
+        "label": "Datasource"
+      },
+      {
+        "name": "namespace",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "$datasource" },
+        "query": "label_values(kube_deployment_status_replicas_available, namespace)",
+        "label": "Namespace",
+        "current": { "text": "tanzen", "value": "tanzen" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "timeseries",
+      "title": "Worker Pod Count vs Queue Depth",
+      "description": "Compares available worker replicas against pending Temporal task queue depth",
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "kube_deployment_status_replicas_available{deployment='tanzen-worker', namespace='$namespace'}",
+          "legendFormat": "Worker Pods"
+        },
+        {
+          "expr": "tanzen_worker_queue_depth",
+          "legendFormat": "Queue Depth"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Queue Depth" },
+            "properties": [{ "id": "custom.axisPlacement", "value": "right" }]
+          }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "SeaweedFS Throughput (bytes/sec)",
+      "description": "Read and write throughput to the SeaweedFS artifact store",
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "rate(tanzen_artifact_bytes_total[5m])",
+          "legendFormat": "{{ bucket }} {{ operation }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "Bps" }
+      }
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "API Server HTTP Request Rate",
+      "description": "Rate of HTTP requests to tanzen-api broken down by route and status",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "sum by (http_route, http_status_code) (rate(http_server_duration_milliseconds_count{job='tanzen-api'}[5m]))",
+          "legendFormat": "{{ http_route }} {{ http_status_code }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      }
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "API Server HTTP Latency p95 (ms)",
+      "description": "95th-percentile HTTP response latency for tanzen-api",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum by (le, http_route) (rate(http_server_duration_milliseconds_bucket{job='tanzen-api'}[5m])))",
+          "legendFormat": "p95 {{ http_route }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "ms" }
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Postgres Connections",
+      "description": "Total backend connections to the CNPG Postgres cluster",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "cnpg_backends_total",
+          "legendFormat": "Connections"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "short" }
+      }
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Redis Pub/Sub Messages/sec",
+      "description": "Rate of messages published to Redis channels (run events)",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "$datasource" },
+      "targets": [
+        {
+          "expr": "rate(redis_pubsub_messages_published_total[1m])",
+          "legendFormat": "Messages/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "msg/s" }
+      }
+    }
+  ]
+}
