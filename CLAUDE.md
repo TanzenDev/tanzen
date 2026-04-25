@@ -83,6 +83,36 @@ kubectl port-forward -n tanzen-dev svc/temporal-web 8080:8080
 kubectl port-forward -n tanzen-dev svc/seaweedfs-filer 8333:8333
 ```
 
+### Talos profile (`tanzenctl up --profile talos --remote-workers tanzen0`)
+
+Provisions a full Talos v1.12.6 cluster (1 CP + 2 workers) as KVM VMs on tanzen0.
+All nodes are on `10.17.5.0/24`. The controller holds VIP `10.17.5.9`.
+
+**One-time Mac setup** (survives reboots; add to shell profile or run after boot):
+```bash
+sudo route add -net 10.17.5.0/24 192.168.1.127   # route to tanzen0's KVM subnet
+```
+
+**Restore iptables on tanzen0 after reboot** (libvirt resets its chains on restart;
+this rule lets the Mac's LAN reach cluster VMs):
+```bash
+ssh tanzen0 "sudo iptables -C LIBVIRT_FWI -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT 2>/dev/null || \
+  sudo iptables -I LIBVIRT_FWI 1 -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT"
+```
+
+**Make the iptables rule persistent on tanzen0**:
+```bash
+ssh tanzen0 "sudo apt-get install -y iptables-persistent && sudo netfilter-persistent save"
+```
+
+**kubeconfig**: `~/.kube/config` on tanzen1 points to `https://10.17.5.9:6443` (context: `tanzen`).
+The route must be active for `kubectl` to work.
+
+**Destroy cluster**:
+```bash
+ssh tanzen0 "cd ~/dev/tanzen/infra/talos/terraform && terraform destroy -auto-approve"
+```
+
 ## Architecture
 
 ### Data / control flow
