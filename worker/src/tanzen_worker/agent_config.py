@@ -30,6 +30,7 @@ class AgentConfig:
     max_tokens: int = 4096
     temperature: float = 0.1
     retries: int = 1
+    code_execution: bool = False      # when True, inject execute_python/typescript tools
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "AgentConfig":
@@ -44,6 +45,7 @@ class AgentConfig:
             max_tokens=d.get("max_tokens", 4096),
             temperature=d.get("temperature", 0.1),
             retries=d.get("retries", 1),
+            code_execution=d.get("code_execution", False),
         )
 
     def resolve_secrets(self) -> dict[str, str]:

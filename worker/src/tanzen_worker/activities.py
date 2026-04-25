@@ -257,6 +257,12 @@ async def run_agent_activity(inp: AgentActivityInput) -> AgentActivityOutput:
             for mcp_cfg in cfg.mcp_servers:
                 toolsets.append(_MCPServerCls(url=mcp_cfg.url))
 
+        # Inject code execution tools when the agent config opts in and the
+        # feature flag is enabled (checked once at worker startup via env var).
+        if cfg.code_execution and os.environ.get("AGENT_CODE_EXECUTION_ENABLED", "false") == "true":
+            from tanzen_worker.code_tools import build_code_tools
+            toolsets.extend(build_code_tools(inp.run_id, step_id))
+
         for name, value in cfg.resolve_secrets().items():
             os.environ.setdefault(name, value)
 

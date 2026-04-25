@@ -166,6 +166,70 @@ routes.get("/:runId/artifacts/*", async (c) => {
   return c.json(JSON.parse(body));
 });
 
+// GET /api/runs/:runId/snapshots — list step checkpoints
+routes.get("/:runId/snapshots", async (c) => {
+  const runId = c.req.param("runId")!;
+  const [run] = await sql`SELECT id FROM runs WHERE id = ${runId}`;
+  if (!run) return c.json({ error: "Not found" }, 404);
+
+  const rows = await sql`
+    SELECT id, run_id, step_id, checkpoint_key, has_state, created_at
+    FROM step_snapshots
+    WHERE run_id = ${runId}
+    ORDER BY created_at ASC
+  `;
+  return c.json({ items: rows });
+});
+
+// POST /api/runs/:runId/steps/:stepId/replay — re-execute a step from its checkpoint
+routes.post("/:runId/steps/:stepId/replay", async (c) => {
+  const runId = c.req.param("runId")!;
+  const stepId = c.req.param("stepId")!;
+
+  const [snap] = await sql`
+    SELECT checkpoint_key, has_state FROM step_snapshots
+    WHERE run_id = ${runId} AND step_id = ${stepId}
+  `;
+  if (!snap) return c.json({ error: "No checkpoint found for this step" }, 404);
+
+  const body = await c.req.json<{ restore_state?: boolean }>().catch(() => ({ restore_state: false }));
+  const restoreState = (body as { restore_state?: boolean }).restore_state && snap.has_state;
+
+  // Fetch checkpoint from S3 to get the original inputs.
+  const { getObject: s3get, ARTIFACTS_BUCKET } = await import("../s3.js");
+  const raw = await s3get(ARTIFACTS_BUCKET, snap.checkpoint_key as string);
+  const cp = JSON.parse(raw) as {
+    script_key: string;
+    language: string;
+    input: unknown;
+    params: Record<string, unknown>;
+    permissions: { allowed_hosts: string; allowed_env: string; timeout_seconds: number };
+  };
+
+  // If restore_state: fetch the pickle blob and include it in the replay response
+  // so the caller can inject it into a new execution. Full server-side replay
+  // (actually re-executing via Temporal) is a future enhancement.
+  let state_b64: string | null = null;
+  if (restoreState) {
+    const stateKey = snap.checkpoint_key.replace("checkpoint.json", "state.pkl");
+    try {
+      const stateBin = await s3get(ARTIFACTS_BUCKET, stateKey);
+      state_b64 = Buffer.from(stateBin, "binary").toString("base64");
+    } catch { /* no state file */ }
+  }
+
+  return c.json({
+    run_id: runId,
+    step_id: stepId,
+    script_key: cp.script_key,
+    language: cp.language,
+    input: cp.input,
+    params: cp.params,
+    permissions: cp.permissions,
+    state_b64,
+  });
+});
+
 // DELETE /api/runs/:runId
 routes.delete("/:runId", async (c) => {
   const runId = c.req.param("runId")!;

@@ -148,8 +148,23 @@ export interface Script {
   allowed_hosts: string;
   allowed_env: string;
   max_timeout_seconds: number;
+  language: "typescript" | "python";
   code?: string;
   versions?: Array<{ version: string; code_key: string; created_at: string; promoted: boolean }>;
+}
+
+export interface Settings {
+  scripts_enabled: boolean;
+  agent_code_execution_enabled: boolean;
+}
+
+export interface StepSnapshot {
+  id: string;
+  run_id: string;
+  step_id: string;
+  checkpoint_key: string;
+  has_state: boolean;
+  created_at: string;
 }
 
 // ---------- Workflows ----------
@@ -234,12 +249,24 @@ export const api = {
       request<{ items: Script[] }>("GET", `/scripts?limit=${p.limit}&offset=${p.offset}`),
     get: (id: string) => request<Script>("GET", `/scripts/${id}`),
     code: (id: string) => request<{ code: string }>("GET", `/scripts/${id}/code`),
-    create: (body: { name: string; description: string; code: string; allowed_hosts?: string; allowed_env?: string; max_timeout_seconds?: number }) =>
-      request<{ id: string; version: string }>("POST", "/scripts", body),
+    create: (body: { name: string; description: string; code: string; language?: "typescript" | "python"; allowed_hosts?: string; allowed_env?: string; max_timeout_seconds?: number }) =>
+      request<{ id: string; version: string; language: string }>("POST", "/scripts", body),
     update: (id: string, body: { description?: string; code?: string; allowed_hosts?: string; allowed_env?: string; max_timeout_seconds?: number }) =>
       request<{ id: string; version: string }>("PUT", `/scripts/${id}`, body),
     promote: (id: string) =>
       request<{ version: string }>("POST", `/scripts/${id}/promote`),
     delete: (id: string) => request("DELETE", `/scripts/${id}`),
+  },
+
+  settings: {
+    get: () => request<Settings>("GET", "/settings"),
+    patch: (body: Partial<Settings>) => request<Settings>("PATCH", "/settings", body),
+  },
+
+  snapshots: {
+    list: (runId: string) =>
+      request<{ items: StepSnapshot[] }>("GET", `/runs/${runId}/snapshots`),
+    replay: (runId: string, stepId: string, restoreState = false) =>
+      request<{ output: unknown }>("POST", `/runs/${runId}/steps/${stepId}/replay`, { restore_state: restoreState }),
   },
 };

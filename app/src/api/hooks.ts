@@ -231,3 +231,34 @@ export const useDeleteScript = () => {
     },
   });
 };
+
+// ---------- Settings ----------
+
+export const useSettings = () =>
+  useQuery({ queryKey: ["settings"], queryFn: () => api.settings.get() });
+
+export const usePatchSettings = () => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: api.settings.patch,
+    onSuccess: (updated) => qc.setQueryData(["settings"], updated),
+  });
+};
+
+// ---------- Snapshots ----------
+
+export const useStepSnapshots = (runId: string) =>
+  useQuery({
+    queryKey: ["snapshots", runId],
+    queryFn: () => api.snapshots.list(runId),
+    enabled: !!runId,
+  });
+
+export const useReplayStep = (runId: string) => {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stepId, restoreState }: { stepId: string; restoreState?: boolean }) =>
+      api.snapshots.replay(runId, stepId, restoreState),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["snapshots", runId] }),
+  });
+};

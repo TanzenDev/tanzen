@@ -24,6 +24,51 @@ function nextVersion(current: string): string {
   return `${parts[0]}.${minor}`;
 }
 
+// Env vars the worker pod uses — scripts must never be granted access to these.
+const BLOCKED_ENV_VARS = new Set([
+  "S3_ACCESS_KEY", "S3_SECRET_KEY", "S3_ENDPOINT_URL",
+  "DATABASE_URL", "DB_PASSWORD",
+  "TEMPORAL_ADDRESS", "TEMPORAL_NAMESPACE",
+  "REDIS_URL",
+  "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
+  "CLERK_SECRET_KEY", "JWT_SECRET",
+]);
+
+// Internal Kubernetes service names scripts must not be allowed to reach.
+const BLOCKED_HOSTS_PATTERNS = [
+  /^tanzen-postgres/,
+  /^tanzen-redis/,
+  /^temporal-/,
+  /^seaweedfs-/,
+  /^localhost$/,
+  /^127\.\d+\.\d+\.\d+$/,
+  /^10\.\d+\.\d+\.\d+$/,
+  /^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$/,
+  /^192\.168\.\d+\.\d+$/,
+];
+
+function validateAllowedEnv(value: string): string | null {
+  if (!value) return null;
+  for (const name of value.split(",").map(s => s.trim()).filter(Boolean)) {
+    if (BLOCKED_ENV_VARS.has(name)) {
+      return `env var '${name}' is not permitted (credential exfiltration risk)`;
+    }
+  }
+  return null;
+}
+
+function validateAllowedHosts(value: string): string | null {
+  if (!value) return null;
+  for (const host of value.split(",").map(s => s.trim()).filter(Boolean)) {
+    for (const pattern of BLOCKED_HOSTS_PATTERNS) {
+      if (pattern.test(host)) {
+        return `host '${host}' is not permitted (internal service SSRF risk)`;
+      }
+    }
+  }
+  return null;
+}
+
 // POST /api/scripts
 routes.post("/", requireRole("admin"), async (c) => {
   const user = c.get("user");
@@ -31,6 +76,7 @@ routes.post("/", requireRole("admin"), async (c) => {
     name: string;
     description?: string;
     code: string;
+    language?: string;
     allowed_hosts?: string;
     allowed_env?: string;
     max_timeout_seconds?: number;
@@ -49,26 +95,35 @@ routes.post("/", requireRole("admin"), async (c) => {
       (body.max_timeout_seconds < 1 || body.max_timeout_seconds > 300)) {
     return c.json({ error: "max_timeout_seconds must be 1–300" }, 400);
   }
+  const language = body.language ?? "typescript";
+  if (language !== "typescript" && language !== "python") {
+    return c.json({ error: "language must be 'typescript' or 'python'" }, 400);
+  }
+  const envErr = validateAllowedEnv(body.allowed_env ?? "");
+  if (envErr) return c.json({ error: envErr }, 400);
+  const hostErr = validateAllowedHosts(body.allowed_hosts ?? "");
+  if (hostErr) return c.json({ error: hostErr }, 400);
 
   const id = crypto.randomUUID();
   const version = "1.0";
   const versionId = crypto.randomUUID();
-  const codeKey = `${id}/${version}.ts`;
+  const ext = language === "python" ? "py" : "ts";
+  const codeKey = `${id}/${version}.${ext}`;
 
   await putObject(SCRIPTS_BUCKET, codeKey, body.code);
   await sql`
     INSERT INTO custom_scripts
-      (id, name, description, current_version, created_by, allowed_hosts, allowed_env, max_timeout_seconds)
+      (id, name, description, current_version, created_by, allowed_hosts, allowed_env, max_timeout_seconds, language)
     VALUES
       (${id}, ${body.name}, ${body.description ?? ""}, ${version}, ${user.userId},
-       ${body.allowed_hosts ?? ""}, ${body.allowed_env ?? ""}, ${body.max_timeout_seconds ?? 30})
+       ${body.allowed_hosts ?? ""}, ${body.allowed_env ?? ""}, ${body.max_timeout_seconds ?? 30}, ${language})
   `;
   await sql`
-    INSERT INTO custom_script_versions (id, script_id, version, code_key, created_by)
-    VALUES (${versionId}, ${id}, ${version}, ${codeKey}, ${user.userId})
+    INSERT INTO custom_script_versions (id, script_id, version, code_key, created_by, language)
+    VALUES (${versionId}, ${id}, ${version}, ${codeKey}, ${user.userId}, ${language})
   `;
 
-  return c.json({ id, name: body.name, version }, 201);
+  return c.json({ id, name: body.name, version, language }, 201);
 });
 
 // GET /api/scripts
@@ -77,7 +132,7 @@ routes.get("/", async (c) => {
   const offset = Number(c.req.query("offset") ?? 0);
   const rows = await sql`
     SELECT id, name, description, current_version, created_by, created_at,
-           allowed_hosts, allowed_env, max_timeout_seconds
+           allowed_hosts, allowed_env, max_timeout_seconds, language
     FROM custom_scripts
     ORDER BY created_at DESC
     LIMIT ${limit} OFFSET ${offset}
@@ -89,7 +144,7 @@ routes.get("/", async (c) => {
 routes.get("/:id", async (c) => {
   const [script] = await sql`
     SELECT s.id, s.name, s.description, s.current_version, s.created_by, s.created_at,
-           s.allowed_hosts, s.allowed_env, s.max_timeout_seconds,
+           s.allowed_hosts, s.allowed_env, s.max_timeout_seconds, s.language,
            json_agg(
              json_build_object(
                'version', sv.version,
@@ -133,7 +188,7 @@ routes.get("/:id/code", async (c) => {
 // PUT /api/scripts/:id
 routes.put("/:id", requireRole("admin"), async (c) => {
   const user = c.get("user");
-  const [script] = await sql`SELECT id, current_version FROM custom_scripts WHERE id = ${c.req.param("id")!}`;
+  const [script] = await sql`SELECT id, current_version, language FROM custom_scripts WHERE id = ${c.req.param("id")!}`;
   if (!script) return c.json({ error: "Not found" }, 404);
 
   const body = await c.req.json<{
@@ -144,15 +199,25 @@ routes.put("/:id", requireRole("admin"), async (c) => {
     max_timeout_seconds?: number;
   }>();
 
+  if (body.allowed_env !== undefined) {
+    const envErr = validateAllowedEnv(body.allowed_env);
+    if (envErr) return c.json({ error: envErr }, 400);
+  }
+  if (body.allowed_hosts !== undefined) {
+    const hostErr = validateAllowedHosts(body.allowed_hosts);
+    if (hostErr) return c.json({ error: hostErr }, 400);
+  }
+
   const scriptId = script.id as string;
+  const scriptLang = script.language as string;
   const newVersion = nextVersion(script.current_version as string);
   const versionId = crypto.randomUUID();
-  const codeKey = `${scriptId}/${newVersion}.ts`;
+  const ext = scriptLang === "python" ? "py" : "ts";
+  const codeKey = `${scriptId}/${newVersion}.${ext}`;
 
   if (body.code) {
     await putObject(SCRIPTS_BUCKET, codeKey, body.code);
   } else {
-    // No code change — copy current version's code key
     const [cv] = await sql`
       SELECT code_key FROM custom_script_versions
       WHERE script_id = ${scriptId} AND version = ${script.current_version as string}
@@ -161,8 +226,8 @@ routes.put("/:id", requireRole("admin"), async (c) => {
   }
 
   await sql`
-    INSERT INTO custom_script_versions (id, script_id, version, code_key, created_by)
-    VALUES (${versionId}, ${scriptId}, ${newVersion}, ${codeKey}, ${user.userId})
+    INSERT INTO custom_script_versions (id, script_id, version, code_key, created_by, language)
+    VALUES (${versionId}, ${scriptId}, ${newVersion}, ${codeKey}, ${user.userId}, ${scriptLang})
   `;
   await sql`UPDATE custom_scripts SET current_version = ${newVersion} WHERE id = ${scriptId}`;
 

@@ -22,6 +22,7 @@ import { secretRoutes } from "./routes/secrets.js";
 import { metricsRoutes } from "./routes/metrics.js";
 import { mcpServerRoutes } from "./routes/mcpServers.js";
 import { scriptRoutes } from "./routes/scripts.js";
+import { settingsRoutes } from "./routes/settings.js";
 import { migrate } from "./db.js";
 import { ensureBuckets } from "./s3.js";
 import { rateLimit, userKey } from "./ratelimit.js";
@@ -83,7 +84,8 @@ api.route("/gates",    gateRoutes);
 api.route("/secrets",  secretRoutes);
 api.route("/metrics",     metricsRoutes);
 api.route("/mcp-servers", mcpServerRoutes);
-api.route("/scripts", scriptRoutes);
+api.route("/scripts",  scriptRoutes);
+api.route("/settings", settingsRoutes);
 
 app.route("/api", api);
 

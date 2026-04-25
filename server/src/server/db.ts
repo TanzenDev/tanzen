@@ -156,8 +156,13 @@ export async function migrate(): Promise<void> {
       created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
       allowed_hosts        TEXT NOT NULL DEFAULT '',
       allowed_env          TEXT NOT NULL DEFAULT '',
-      max_timeout_seconds  INTEGER NOT NULL DEFAULT 30
+      max_timeout_seconds  INTEGER NOT NULL DEFAULT 30,
+      language             TEXT NOT NULL DEFAULT 'typescript'
     )
+  `;
+
+  await sql`
+    ALTER TABLE custom_scripts ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'typescript'
   `;
 
   await sql`
@@ -169,7 +174,41 @@ export async function migrate(): Promise<void> {
       created_by  TEXT NOT NULL,
       created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
       promoted    BOOLEAN NOT NULL DEFAULT FALSE,
+      language    TEXT NOT NULL DEFAULT 'typescript',
       UNIQUE(script_id, version)
+    )
+  `;
+
+  await sql`
+    ALTER TABLE custom_script_versions ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'typescript'
+  `;
+
+  // Settings — feature flags and operator-controlled configuration.
+  await sql`
+    CREATE TABLE IF NOT EXISTS settings (
+      key        TEXT PRIMARY KEY,
+      value      JSONB NOT NULL,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    )
+  `;
+
+  await sql`
+    INSERT INTO settings (key, value) VALUES
+      ('scripts_enabled',              'true'),
+      ('agent_code_execution_enabled', 'false')
+    ON CONFLICT (key) DO NOTHING
+  `;
+
+  // Step snapshots — execution checkpoints for time-machine replay.
+  await sql`
+    CREATE TABLE IF NOT EXISTS step_snapshots (
+      id              TEXT PRIMARY KEY,
+      run_id          TEXT NOT NULL REFERENCES runs(id) ON DELETE CASCADE,
+      step_id         TEXT NOT NULL,
+      checkpoint_key  TEXT NOT NULL,
+      has_state       BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(run_id, step_id)
     )
   `;
 }

@@ -1,7 +1,60 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense, lazy } from "react";
 import { useScripts, useScript, useScriptCode, useCreateScript, useUpdateScript, useDeleteScript } from "../api/hooks.js";
 import type { Script } from "../api/client.js";
 import { Paginator, PAGE_SIZE } from "../components/Paginator.js";
+
+// Monaco is large (~2 MB); lazy-load so the initial bundle stays small.
+const MonacoEditor = lazy(() =>
+  import("@monaco-editor/react").then((m) => ({ default: m.default }))
+);
+
+// ---------------------------------------------------------------------------
+// Default code templates
+// ---------------------------------------------------------------------------
+
+const DEFAULT_TS = `// Tanzen script — receives { input, params } on stdin, writes JSON to stdout.
+const raw = await new Response(Deno.stdin.readable).text();
+const { input, params } = JSON.parse(raw);
+
+// TODO: implement your logic here
+const result = input;
+
+console.log(JSON.stringify({ result }));
+`;
+
+const DEFAULT_PY = `# Tanzen Python script — input and params are pre-injected as globals.
+# Set the \`output\` variable with your result.
+
+# Example: echo input back
+output = {"result": input}
+`;
+
+// ---------------------------------------------------------------------------
+// Language toggle
+// ---------------------------------------------------------------------------
+
+type Language = "typescript" | "python";
+
+function LanguageToggle({ value, onChange }: { value: Language; onChange: (l: Language) => void }) {
+  return (
+    <div className="inline-flex rounded overflow-hidden border border-slate-600 text-xs font-medium">
+      {(["typescript", "python"] as Language[]).map((lang) => (
+        <button
+          key={lang}
+          type="button"
+          onClick={() => onChange(lang)}
+          className={`px-3 py-1 transition-colors ${
+            value === lang
+              ? "bg-cyan-600 text-white"
+              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+          }`}
+        >
+          {lang === "typescript" ? "TypeScript" : "Python"}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Script form (create or edit)
@@ -13,16 +66,6 @@ interface ScriptFormProps {
   onSaved: () => void;
 }
 
-const DEFAULT_CODE = `// Tanzen script — receives { input, params } on stdin, writes JSON to stdout.
-const raw = await new Response(Deno.stdin.readable).text();
-const { input, params } = JSON.parse(raw);
-
-// TODO: implement your logic here
-const result = input;
-
-console.log(JSON.stringify({ result }));
-`;
-
 function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
   const createScript = useCreateScript();
   const updateScript = useUpdateScript(initial?.id ?? "");
@@ -30,17 +73,24 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
 
   const [name, setName] = useState(initial?.name ?? "");
   const [description, setDescription] = useState(initial?.description ?? "");
-  const [code, setCode] = useState<string | null>(null); // null = not yet loaded
+  const [language, setLanguage] = useState<Language>((initial?.language as Language) ?? "typescript");
+  const [code, setCode] = useState<string | null>(null);
   const [allowedHosts, setAllowedHosts] = useState(initial?.allowed_hosts ?? "");
   const [allowedEnv, setAllowedEnv] = useState(initial?.allowed_env ?? "");
   const [maxTimeout, setMaxTimeout] = useState(String(initial?.max_timeout_seconds ?? 30));
   const [formError, setFormError] = useState<string | null>(null);
 
-  // Once code is fetched from API, populate editor
-  const resolvedCode = code ?? codeData?.code ?? DEFAULT_CODE;
+  const defaultCode = language === "python" ? DEFAULT_PY : DEFAULT_TS;
+  const resolvedCode = code ?? codeData?.code ?? defaultCode;
 
   const isEdit = !!initial;
   const isPending = createScript.isPending || updateScript.isPending;
+
+  function handleLanguageChange(lang: Language) {
+    setLanguage(lang);
+    // Reset code to default template when switching language on a new script.
+    if (!isEdit && !codeData?.code) setCode(null);
+  }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,6 +116,7 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
           name,
           description,
           code: resolvedCode,
+          language,
           allowed_hosts: allowedHosts,
           allowed_env: allowedEnv,
           max_timeout_seconds: Number(maxTimeout),
@@ -92,7 +143,10 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
               placeholder="my-script"
               required
             />
-            <p className="mt-1 text-xs text-slate-500">Lowercase letters, numbers, hyphens. Referenced in DSL as <span className="font-mono">name: "{name || "my-script"}"</span>.</p>
+            <p className="mt-1 text-xs text-slate-500">
+              Lowercase letters, numbers, hyphens. Referenced in DSL as{" "}
+              <span className="font-mono">name: "{name || "my-script"}"</span>.
+            </p>
           </div>
         )}
 
@@ -107,16 +161,36 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1">TypeScript code</label>
-          <textarea
-            className="w-full rounded bg-slate-900 px-3 py-2 text-sm text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500 resize-y"
-            rows={16}
-            value={code ?? codeData?.code ?? DEFAULT_CODE}
-            onChange={(e) => setCode(e.target.value)}
-            spellCheck={false}
-          />
+          <div className="flex items-center justify-between mb-1">
+            <label className="block text-sm font-medium text-slate-300">Code</label>
+            {!isEdit && <LanguageToggle value={language} onChange={handleLanguageChange} />}
+          </div>
+          <div className="rounded overflow-hidden border border-slate-700" style={{ height: 320 }}>
+            <Suspense fallback={
+              <div className="h-full bg-slate-900 flex items-center justify-center text-slate-500 text-sm">
+                Loading editor…
+              </div>
+            }>
+              <MonacoEditor
+                height="320px"
+                language={language === "python" ? "python" : "typescript"}
+                value={resolvedCode}
+                onChange={(v) => setCode(v ?? "")}
+                theme="vs-dark"
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: 13,
+                  lineNumbers: "on",
+                  scrollBeyondLastLine: false,
+                  tabSize: language === "python" ? 4 : 2,
+                }}
+              />
+            </Suspense>
+          </div>
           <p className="mt-1 text-xs text-slate-500">
-            Runs in Deno. Read <span className="font-mono">{"{ input, params }"}</span> from stdin JSON. Write result to stdout as JSON.
+            {language === "python"
+              ? "Runs in Pyodide (V8 sandbox). Pre-injected globals: input, params. Must set output variable."
+              : "Runs in Deno. Read { input, params } from stdin JSON. Write result to stdout as JSON."}
           </p>
         </div>
 
@@ -205,48 +279,30 @@ function ScriptDetail({ scriptId, onEdit, onClose }: ScriptDetailProps) {
     <div className="rounded-lg border border-slate-700 bg-slate-800 p-6 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-lg font-bold font-mono">{script.name}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-bold font-mono">{script.name}</h2>
+            <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+              script.language === "python"
+                ? "bg-yellow-900 text-yellow-300"
+                : "bg-blue-900 text-blue-300"
+            }`}>
+              {script.language === "python" ? "Python" : "TypeScript"}
+            </span>
+          </div>
           <p className="text-sm text-slate-400">{script.description || <em>No description</em>}</p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button
-            onClick={onEdit}
-            className="rounded bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500"
-          >
-            Edit
-          </button>
-          <button
-            onClick={handleDelete}
-            className="rounded bg-red-900 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-800"
-          >
-            Delete
-          </button>
-          <button
-            onClick={onClose}
-            className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-600"
-          >
-            ✕
-          </button>
+          <button onClick={onEdit} className="rounded bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500">Edit</button>
+          <button onClick={handleDelete} className="rounded bg-red-900 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-800">Delete</button>
+          <button onClick={onClose} className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-600">✕</button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <div>
-          <span className="text-slate-500">Version</span>
-          <p className="font-mono text-white">{script.current_version}</p>
-        </div>
-        <div>
-          <span className="text-slate-500">Timeout</span>
-          <p className="text-white">{script.max_timeout_seconds}s</p>
-        </div>
-        <div>
-          <span className="text-slate-500">Allowed hosts</span>
-          <p className="font-mono text-white break-all">{script.allowed_hosts || <em className="text-slate-500">none</em>}</p>
-        </div>
-        <div>
-          <span className="text-slate-500">Allowed env</span>
-          <p className="font-mono text-white break-all">{script.allowed_env || <em className="text-slate-500">none</em>}</p>
-        </div>
+        <div><span className="text-slate-500">Version</span><p className="font-mono text-white">{script.current_version}</p></div>
+        <div><span className="text-slate-500">Timeout</span><p className="text-white">{script.max_timeout_seconds}s</p></div>
+        <div><span className="text-slate-500">Allowed hosts</span><p className="font-mono text-white break-all">{script.allowed_hosts || <em className="text-slate-500">none</em>}</p></div>
+        <div><span className="text-slate-500">Allowed env</span><p className="font-mono text-white break-all">{script.allowed_env || <em className="text-slate-500">none</em>}</p></div>
       </div>
 
       {codeData?.code && (
@@ -273,7 +329,7 @@ function ScriptDetail({ scriptId, onEdit, onClose }: ScriptDetailProps) {
 
       <div className="pt-2 border-t border-slate-700">
         <p className="text-xs text-slate-500 font-mono">
-          DSL usage: <span className="text-slate-300">script myStep {"{ name: \""}{script.name}{"\""} {"... }"}</span>
+          DSL usage: <span className="text-slate-300">script myStep {`{ name: "${script.name}" ... }`}</span>
         </p>
       </div>
     </div>
@@ -312,7 +368,7 @@ export function ScriptsPage() {
         <div className="shrink-0">
           <h1 className="text-2xl font-bold">Scripts</h1>
           <p className="text-sm text-slate-400 mt-1">
-            TypeScript scripts that run as Deno subprocesses inside Temporal activities.
+            TypeScript and Python scripts that run as sandboxed activities.
           </p>
         </div>
         <input
@@ -332,10 +388,7 @@ export function ScriptsPage() {
       </div>
 
       {creating && (
-        <ScriptForm
-          onCancel={() => setCreating(false)}
-          onSaved={() => setCreating(false)}
-        />
+        <ScriptForm onCancel={() => setCreating(false)} onSaved={() => setCreating(false)} />
       )}
 
       {editingId && selectedScript && (
@@ -347,7 +400,6 @@ export function ScriptsPage() {
       )}
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
-        {/* List */}
         <div className={selectedId ? "lg:col-span-2" : "lg:col-span-5"}>
           <div className="overflow-hidden rounded-lg border border-slate-700">
             <table className="w-full text-sm">
@@ -355,8 +407,8 @@ export function ScriptsPage() {
                 <tr>
                   <th className="px-4 py-3 text-left">Name</th>
                   <th className="px-4 py-3 text-left">Description</th>
+                  <th className="px-4 py-3 text-left">Lang</th>
                   <th className="px-4 py-3 text-left">Version</th>
-                  <th className="px-4 py-3 text-left">Hosts</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700 bg-slate-900">
@@ -375,10 +427,16 @@ export function ScriptsPage() {
                   >
                     <td className="px-4 py-3 font-mono text-cyan-400">{s.name}</td>
                     <td className="px-4 py-3 text-slate-400 max-w-xs truncate">{s.description || "—"}</td>
-                    <td className="px-4 py-3 font-mono text-slate-300">{s.current_version}</td>
-                    <td className="px-4 py-3 font-mono text-slate-400 text-xs truncate max-w-[160px]">
-                      {s.allowed_hosts || <em className="not-italic text-slate-600">none</em>}
+                    <td className="px-4 py-3">
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${
+                        s.language === "python"
+                          ? "bg-yellow-900 text-yellow-300"
+                          : "bg-blue-900 text-blue-300"
+                      }`}>
+                        {s.language === "python" ? "Py" : "TS"}
+                      </span>
                     </td>
+                    <td className="px-4 py-3 font-mono text-slate-300">{s.current_version}</td>
                   </tr>
                 ))}
               </tbody>
@@ -387,7 +445,6 @@ export function ScriptsPage() {
           </div>
         </div>
 
-        {/* Detail */}
         {selectedId && !editingId && (
           <div className="lg:col-span-3">
             <ScriptDetail

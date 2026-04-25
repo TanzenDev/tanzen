@@ -1,0 +1,153 @@
+{{- if .Values.networkPolicies.enabled }}
+# ---------------------------------------------------------------------------
+# Cilium NetworkPolicies — deny-all default with explicit allow-list.
+#
+# Layer 3/4 policies (CiliumNetworkPolicy) complement the Deno-level
+# --deny-net flag. Together they form two independent enforcement layers:
+#   Inner: Deno permission flags (V8 isolate boundary)
+#   Outer: Cilium CNP (kernel eBPF, cannot be bypassed by user code)
+# ---------------------------------------------------------------------------
+
+# Default deny-all egress for the tanzen-worker pod.
+# Exceptions are enumerated below.
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tanzen-worker-egress
+  namespace: {{ .Values.global.namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: tanzen-worker
+  egress:
+    # Temporal frontend (workflow scheduling + activity polling)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: temporal
+            app.kubernetes.io/component: frontend
+      toPorts:
+        - ports:
+            - port: "7233"
+              protocol: TCP
+
+    # SeaweedFS filer (S3 artifact/script storage)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: seaweedfs
+            app.kubernetes.io/component: filer
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+            - port: "8333"
+              protocol: TCP
+
+    # Redis (event pub/sub)
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+
+    # Kubernetes API server (for future executor pod management)
+    - toEntities:
+        - kube-apiserver
+      toPorts:
+        - ports:
+            - port: "6443"
+              protocol: TCP
+
+    # DNS resolution (required for service discovery)
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+
+# Default deny-all ingress for the tanzen-worker pod.
+# The worker only receives traffic from Temporal (activity delivery).
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tanzen-worker-ingress
+  namespace: {{ .Values.global.namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: tanzen-worker
+  ingress:
+    # Prometheus scraping
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: prometheus
+      toPorts:
+        - ports:
+            - port: "9464"
+              protocol: TCP
+
+# tanzen-api egress: deny by default, allow required backends.
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: tanzen-api-egress
+  namespace: {{ .Values.global.namespace }}
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: tanzen-api
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: tanzen-postgres
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: redis
+      toPorts:
+        - ports:
+            - port: "6379"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: seaweedfs
+            app.kubernetes.io/component: filer
+      toPorts:
+        - ports:
+            - port: "8888"
+              protocol: TCP
+            - port: "8333"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: temporal
+            app.kubernetes.io/component: frontend
+      toPorts:
+        - ports:
+            - port: "7233"
+              protocol: TCP
+
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+{{- end }}
