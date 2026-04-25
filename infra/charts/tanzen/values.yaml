@@ -77,12 +77,15 @@ temporal:
             maxConns: 5
             maxConnLifetime: "1h"
 
-  # Schema job disabled — databases and schemas pre-created by bootstrap.sh
-  # and applied once via admintools (temporal-sql-tool). The job's
-  # create-database step fails against CNPG because temporal_user lacks CREATEDB.
+  # createDatabase disabled: temporal_user lacks CREATEDB on CNPG; databases
+  # are pre-created by the CNPG cluster initdb (see postgres.yaml). setup/update
+  # only run temporal-sql-tool against existing databases and work fine.
   schema:
     createDatabase:
       enabled: false
+    # Disabled: the Temporal chart schema job uses direct exec (no shell wrapper)
+    # which causes temporal-sql-tool to exit 1 on Talos/KVM worker nodes.
+    # A custom schema job in tanzen/templates/ runs the same commands via sh -c.
     setup:
       enabled: false
     update:
@@ -206,6 +209,8 @@ worker:
     agentsBucket: "agents"
     scriptsBucket: "scripts"
   redisUrl: "redis://tanzen-redis-master:6379"
+  kata:
+    enabled: false   # set to true when deploying on Kata-capable nodes
   resources:
     requests:
       cpu: 100m

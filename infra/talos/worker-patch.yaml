@@ -1,0 +1,15 @@
+machine:
+  nodeLabels:
+    kata.tanzen.dev/capable: "true"
+  install:
+    disk: /dev/vda   # libvirt virtio-blk disk appears as vda, not sda
+  features:
+    kubePrism:
+      enabled: true
+      port: 7445
+    hostDNS:
+      enabled: true
+      forwardKubeDNSToHost: true
+  kubelet:
+    extraArgs:
+      rotate-server-certificates: "true"

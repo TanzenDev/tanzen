@@ -1,0 +1,115 @@
+{{- if .Values.postgres.enabled }}
+# Custom Temporal schema job that uses sh -c wrapper.
+# The Temporal chart's built-in schema job uses direct exec which causes
+# temporal-sql-tool to exit 1 on Talos/KVM workers (PID-1 exec behavior).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: tanzen-temporal-schema
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "0"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 10
+  template:
+    spec:
+      restartPolicy: OnFailure
+      initContainers:
+      - name: setup-default-store
+        image: temporalio/admin-tools:1.24.2-tctl-1.18.1-cli-0.13.0
+        command:
+        - sh
+        - -c
+        - sleep 10; until temporal-sql-tool setup-schema -v 0.0; do echo "retrying setup-default..."; sleep 10; done
+        env:
+        - name: SQL_PLUGIN
+          value: postgres12
+        - name: SQL_HOST
+          value: tanzen-postgres-rw
+        - name: SQL_PORT
+          value: "5432"
+        - name: SQL_DATABASE
+          value: temporal
+        - name: SQL_USER
+          value: temporal_user
+        - name: SQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgres.temporalSecretName }}
+              key: password
+      - name: setup-visibility-store
+        image: temporalio/admin-tools:1.24.2-tctl-1.18.1-cli-0.13.0
+        command:
+        - sh
+        - -c
+        - until temporal-sql-tool setup-schema -v 0.0; do echo "retrying setup-visibility..."; sleep 10; done
+        env:
+        - name: SQL_PLUGIN
+          value: postgres12
+        - name: SQL_HOST
+          value: tanzen-postgres-rw
+        - name: SQL_PORT
+          value: "5432"
+        - name: SQL_DATABASE
+          value: temporal_visibility
+        - name: SQL_USER
+          value: temporal_user
+        - name: SQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgres.temporalSecretName }}
+              key: password
+      - name: update-default-store
+        image: temporalio/admin-tools:1.24.2-tctl-1.18.1-cli-0.13.0
+        command:
+        - sh
+        - -c
+        - until temporal-sql-tool update-schema --schema-dir /etc/temporal/schema/postgresql/v12/temporal/versioned; do echo "retrying update-default..."; sleep 10; done
+        env:
+        - name: SQL_PLUGIN
+          value: postgres12
+        - name: SQL_HOST
+          value: tanzen-postgres-rw
+        - name: SQL_PORT
+          value: "5432"
+        - name: SQL_DATABASE
+          value: temporal
+        - name: SQL_USER
+          value: temporal_user
+        - name: SQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgres.temporalSecretName }}
+              key: password
+      - name: update-visibility-store
+        image: temporalio/admin-tools:1.24.2-tctl-1.18.1-cli-0.13.0
+        command:
+        - sh
+        - -c
+        - until temporal-sql-tool update-schema --schema-dir /etc/temporal/schema/postgresql/v12/visibility/versioned; do echo "retrying update-visibility..."; sleep 10; done
+        env:
+        - name: SQL_PLUGIN
+          value: postgres12
+        - name: SQL_HOST
+          value: tanzen-postgres-rw
+        - name: SQL_PORT
+          value: "5432"
+        - name: SQL_DATABASE
+          value: temporal_visibility
+        - name: SQL_USER
+          value: temporal_user
+        - name: SQL_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.postgres.temporalSecretName }}
+              key: password
+      containers:
+      - name: done
+        image: busybox:latest
+        command: ["sh", "-c", "echo 'Temporal schema setup complete'"]
+{{- end }}

@@ -17,6 +17,11 @@ spec:
       labels:
         app: tanzen-worker
     spec:
+      {{- if .Values.worker.kata.enabled }}
+      runtimeClassName: kata
+      nodeSelector:
+        kata.tanzen.dev/capable: "true"
+      {{- end }}
       containers:
         - name: tanzen-worker
           image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag }}"

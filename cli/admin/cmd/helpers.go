@@ -30,7 +30,12 @@ func runCmd(name string, args ...string) error {
 }
 
 // runCmdOutput executes a command and returns its combined output.
+// In dry-run mode it prints the command and returns a placeholder string.
 func runCmdOutput(name string, args ...string) (string, error) {
+	if dryRun {
+		fmt.Println(color.HiBlackString("  $ " + name + " " + strings.Join(args, " ")))
+		return "<dry-run>", nil
+	}
 	c := osexec.Command(name, args...)
 	if kubeconfig != "" {
 		c.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig)
@@ -80,11 +85,26 @@ func createSecretIfMissing(name string, literals map[string]string) error {
 	if err != nil {
 		return fmt.Errorf("build secret %s: %w", name, err)
 	}
-	applyCmd := osexec.Command("kubectl", "apply", "-f", "-")
-	applyCmd.Stdin = strings.NewReader(yaml)
-	applyCmd.Stdout = os.Stdout
-	applyCmd.Stderr = os.Stderr
-	return applyCmd.Run()
+	return runCmdIn(yaml, "kubectl", "apply", "-f", "-")
+}
+
+// runCmdIn executes a command with the given string piped to stdin.
+// In dry-run mode it prints the command and returns nil without executing.
+func runCmdIn(stdin, name string, args ...string) error {
+	if dryRun {
+		fmt.Println(color.HiBlackString("  $ " + name + " " + strings.Join(args, " ") + " <<EOF"))
+		return nil
+	}
+	c := osexec.Command(name, args...)
+	if kubeconfig != "" {
+		c.Env = append(os.Environ(), "KUBECONFIG="+kubeconfig)
+	} else {
+		c.Env = os.Environ()
+	}
+	c.Stdin = strings.NewReader(stdin)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
+	return c.Run()
 }
 
 // labelSecret adds tanzen/managed=true to a secret.

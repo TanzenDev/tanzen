@@ -31,7 +31,7 @@ nodes:
   # - role: worker
 
 networking:
-  # Disable default CNI so we can install a specific one (kind default: kindnet)
-  # disableDefaultCNI: false
+  disableDefaultCNI: true   # Cilium is installed as CNI in the bootstrap step
+  kubeProxyMode: "none"     # Cilium replaces kube-proxy; suppress the DaemonSet at creation
   podSubnet: "10.244.0.0/16"
   serviceSubnet: "10.96.0.0/12"
