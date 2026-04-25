@@ -83,13 +83,13 @@ temporal:
   schema:
     createDatabase:
       enabled: false
-    # Disabled: the Temporal chart schema job uses direct exec (no shell wrapper)
-    # which causes temporal-sql-tool to exit 1 on Talos/KVM worker nodes.
-    # A custom schema job in tanzen/templates/ runs the same commands via sh -c.
+    # Enabled here (default for kind profile). The talos profile disables these
+    # via --set overrides and uses the custom tanzen/templates/temporal-schema-job.yaml
+    # instead (sh -c wrapper avoids the PID-1 direct-exec exit-1 on Talos).
     setup:
-      enabled: false
+      enabled: true
     update:
-      enabled: false
+      enabled: true
 
   # Disable bundled datastores not needed
   cassandra:

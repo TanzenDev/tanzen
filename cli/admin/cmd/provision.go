@@ -130,14 +130,27 @@ func provisionTalosCluster(root string) error {
 		_ = os.WriteFile(talosCfgPath+".json", []byte(talosCfgRaw), 0600)
 	}
 
+	// Wait for the cluster API server to become reachable before returning.
+	// The controller needs to complete Talos installation + reboot (~3-7 min).
+	step("Waiting for cluster API at 10.17.5.9:6443 (up to 10m)")
+	if err := runCmd("kubectl", "--kubeconfig", kubeconfigPath,
+		"wait", "--for=condition=Ready", "node", "--all", "--timeout=10m",
+	); err != nil {
+		// Nodes may not be Ready (no CNI yet) — just check if the API responds.
+		if _, apiErr := runCmdOutput("kubectl", "--kubeconfig", kubeconfigPath,
+			"get", "nodes", "--request-timeout=5s"); apiErr != nil {
+			warn("cluster API not yet reachable — continuing; use --skip-cluster to resume")
+		}
+	}
+
 	// Allow Mac (192.168.1.0/24) to reach cluster VMs through tanzen0's libvirt bridge.
 	// libvirt's LIBVIRT_FWI chain blocks inbound forwarding by default; this rule
 	// inserts an ACCEPT for the Mac's subnet.
 	step("Allowing Mac subnet through tanzen0 libvirt firewall")
-	allowFwdCmd := fmt.Sprintf(
-		"sudo iptables -C LIBVIRT_FWI -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT 2>/dev/null || "+
-			"sudo iptables -I LIBVIRT_FWI 1 -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT",
-	)
+	// Delete any existing instance (might be in wrong position after libvirt refresh),
+	// then insert at position 1 so it fires before LIBVIRT_FWI's REJECT rules.
+	allowFwdCmd := "while sudo iptables -D LIBVIRT_FWI -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT 2>/dev/null; do :; done; " +
+		"sudo iptables -I LIBVIRT_FWI 1 -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT"
 	if err := runCmd("ssh", sshHost, allowFwdCmd); err != nil {
 		warn("iptables LIBVIRT_FWI rule: " + err.Error() +
 			"\n  Manual: ssh tanzen0 'sudo iptables -I LIBVIRT_FWI 1 -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT'")

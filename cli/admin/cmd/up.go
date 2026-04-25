@@ -315,6 +315,14 @@ func runUpTalos(root string) error {
 		extraHelmArgs = append(extraHelmArgs, "--set", "worker.kata.enabled=true")
 	}
 
+	// Disable the Temporal chart's built-in schema jobs: they use direct exec which
+	// exits 1 on Talos (PID-1 issue). Our custom tanzen-temporal-schema Job uses
+	// sh -c wrappers instead (see infra/charts/tanzen/templates/temporal-schema-job.yaml).
+	extraHelmArgs = append(extraHelmArgs,
+		"--set", "temporal.schema.setup.enabled=false",
+		"--set", "temporal.schema.update.enabled=false",
+	)
+
 	// Install without --wait: any unpushed images would cause timeout.
 	// Wait on core infrastructure explicitly after install.
 	if err := installTanzenChartNoWaitExtra(root, extraHelmArgs); err != nil {
