@@ -290,22 +290,20 @@ func runUpTalos(root string) error {
 			filepath.Join(root, "mcp", "falkordb")},
 	}
 	var helmImageOverrides []string
-	step("Building and pushing local images to DockerHub (" + dockerHubOrg + ")")
+	// Use buildx with --platform linux/amd64 so images work on x86_64 workers.
+	step("Building and pushing local images to DockerHub (" + dockerHubOrg + ") [linux/amd64]")
 	for _, img := range localImgs {
-		if err := runCmd("docker", "build", "-t", img.localName, img.buildDir); err != nil {
-			warn(fmt.Sprintf("docker build %s: %v — skipping push", img.localName, err))
-			continue
-		}
-		if err := runCmd("docker", "tag", img.localName, img.hubRepo); err != nil {
-			warn(fmt.Sprintf("docker tag %s: %v", img.hubRepo, err))
-			continue
-		}
-		if err := runCmd("docker", "push", img.hubRepo); err != nil {
-			warn(fmt.Sprintf("docker push %s: %v — pod may ImagePullBackOff", img.hubRepo, err))
+		if err := runCmd("docker", "buildx", "build",
+			"--platform", "linux/amd64",
+			"--push",
+			"-t", img.hubRepo,
+			img.buildDir,
+		); err != nil {
+			warn(fmt.Sprintf("docker buildx %s: %v — pod may ImagePullBackOff", img.hubRepo, err))
 			continue
 		}
 		helmImageOverrides = append(helmImageOverrides, img.helmSetKey)
-		success(img.hubRepo + " pushed")
+		success(img.hubRepo + " pushed (linux/amd64)")
 	}
 
 	// Build the helm install args with DockerHub image overrides.

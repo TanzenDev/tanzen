@@ -130,8 +130,21 @@ func provisionTalosCluster(root string) error {
 		_ = os.WriteFile(talosCfgPath+".json", []byte(talosCfgRaw), 0600)
 	}
 
+	// Allow Mac (192.168.1.0/24) to reach cluster VMs through tanzen0's libvirt bridge.
+	// libvirt's LIBVIRT_FWI chain blocks inbound forwarding by default; this rule
+	// inserts an ACCEPT for the Mac's subnet.
+	step("Allowing Mac subnet through tanzen0 libvirt firewall")
+	allowFwdCmd := fmt.Sprintf(
+		"sudo iptables -C LIBVIRT_FWI -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT 2>/dev/null || "+
+			"sudo iptables -I LIBVIRT_FWI 1 -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT",
+	)
+	if err := runCmd("ssh", sshHost, allowFwdCmd); err != nil {
+		warn("iptables LIBVIRT_FWI rule: " + err.Error() +
+			"\n  Manual: ssh tanzen0 'sudo iptables -I LIBVIRT_FWI 1 -s 192.168.1.0/24 -d 10.17.5.0/24 -j ACCEPT'")
+	}
+
 	success(fmt.Sprintf("Cluster provisioned — kubeconfig: %s", kubeconfigPath))
-	success(fmt.Sprintf("Mac route needed: sudo route add -net 10.17.5.0/24 192.168.1.127"))
+	fmt.Printf("  Mac route required: sudo route add -net 10.17.5.0/24 192.168.1.127\n")
 	return nil
 }
 
