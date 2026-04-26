@@ -184,6 +184,45 @@ For AWS S3 or compatible stores, set `seaweedfs.enabled: false` and configure `s
 
 ---
 
+## Network Policies (`networkPolicies`)
+
+Cilium `CiliumNetworkPolicy` resources that implement deny-all-by-default egress
+for the worker and API pods. Works on both kind-tanzen and talos clusters (Cilium
+is installed on both). Disabled by default to avoid breaking clusters without
+the expected pod labels; enable once you've verified labels match.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `networkPolicies.enabled` | bool | `false` | Deploy CiliumNetworkPolicy resources |
+
+Enable on talos:
+```bash
+tanzenctl up --profile talos ... --set networkPolicies.enabled=true
+```
+
+Enable on kind:
+```bash
+helm upgrade tanzen ./infra/charts/tanzen -n tanzen-dev --set networkPolicies.enabled=true
+```
+
+---
+
+## Code Execution
+
+Runtime feature flags are stored in the `settings` DB table and exposed via
+`GET /PATCH /api/settings`. They do not require a Helm values change to toggle.
+
+| Setting key | Default | Description |
+|-------------|---------|-------------|
+| `scripts_enabled` | `true` | Allow script registration and use in DSL |
+| `agent_code_execution_enabled` | `false` | Allow agents to call `execute_python`/`execute_typescript` tools |
+
+The `PYODIDE_RUNNER_PATH` env var on the worker controls the Python executor:
+- Dev (default): path to `infra/executor/pyodide_runner.ts` (runs via `deno run`)
+- Prod: path to pre-compiled `pyodide_runner` binary (runs as standalone; ~300 ms cold start)
+
+---
+
 ## Production Example
 
 ```yaml

@@ -171,6 +171,49 @@ outputs, ordered by iteration.
 
 ---
 
+### `script`
+
+Executes a registered script as a Temporal activity. Scripts are sandboxed:
+TypeScript runs in a Deno V8 isolate; Python runs in a Pyodide WASM sandbox
+inside Deno (V8-within-V8). Both execute inside the worker's Kata microVM.
+
+```
+script <id> {
+  name:    "<script-name>"    // required, matches registered script slug
+  version: "<version>"        // optional, defaults to current_version
+  input:   <expr>             // optional
+  params:  { key: expr }      // optional
+  when:    <ref>              // optional conditional
+  timeout: <duration>         // optional, overrides script's max_timeout_seconds
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `name` | yes | Slug of a registered script (see Scripts page). |
+| `version` | no | Script version to pin. Omit to always use the promoted version. |
+| `input` | no | Data passed to the script. |
+| `params` | no | Additional named parameters. |
+| `when` | no | Conditional execution (same rules as `step`). |
+| `timeout` | no | Override the script's configured timeout for this call. |
+
+**TypeScript scripts** receive `{ input, params }` as a JSON object on `stdin` and
+must write a JSON value to `stdout`.
+
+**Python scripts** receive `input` and `params` as pre-injected globals. The script
+must assign a value to the `output` variable:
+
+```python
+# input and params are available as globals
+output = {"result": input["value"] * 2}
+```
+
+Network access is disabled by default. To allow specific hosts, set `allowed_hosts`
+when registering the script. Internal Kubernetes service hostnames (postgres, redis,
+temporal, seaweedfs) cannot be whitelisted.
+
+---
+
 ### `gate`
 
 A human review gate. Execution pauses until a reviewer approves or rejects via the API

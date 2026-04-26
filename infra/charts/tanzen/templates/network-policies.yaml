@@ -2,14 +2,23 @@
 # ---------------------------------------------------------------------------
 # Cilium NetworkPolicies — deny-all default with explicit allow-list.
 #
-# Layer 3/4 policies (CiliumNetworkPolicy) complement the Deno-level
-# --deny-net flag. Together they form two independent enforcement layers:
-#   Inner: Deno permission flags (V8 isolate boundary)
-#   Outer: Cilium CNP (kernel eBPF, cannot be bypassed by user code)
+# Works on both kind-tanzen and talos clusters (Cilium installed on both).
+# Disabled by default; enable via networkPolicies.enabled=true.
+# Talos: tanzenctl up --set networkPolicies.enabled=true
+#
+# Pod label selectors verified against deployed pods (2026-04-26):
+#   worker          → app: tanzen-worker
+#   postgres        → app.kubernetes.io/name: postgresql  (CNPG)
+#   redis           → app.kubernetes.io/name: redis
+#   temporal        → app.kubernetes.io/name: temporal
+#   seaweedfs-filer → app.kubernetes.io/name: seaweedfs-filer
+#
+# Defense-in-depth layer:
+#   Inner: Deno --deny-net (V8 isolate, user-code boundary)
+#   Outer: Cilium CNP (kernel eBPF, cannot be bypassed from user code)
 # ---------------------------------------------------------------------------
 
-# Default deny-all egress for the tanzen-worker pod.
-# Exceptions are enumerated below.
+# tanzen-worker: deny all egress except required backends.
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -19,7 +28,7 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: tanzen-worker
+      app: tanzen-worker
   egress:
     # Temporal frontend (workflow scheduling + activity polling)
     - toEndpoints:
@@ -34,8 +43,7 @@ spec:
     # SeaweedFS filer (S3 artifact/script storage)
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: seaweedfs
-            app.kubernetes.io/component: filer
+            app.kubernetes.io/name: seaweedfs-filer
       toPorts:
         - ports:
             - port: "8888"
@@ -43,7 +51,7 @@ spec:
             - port: "8333"
               protocol: TCP
 
-    # Redis (event pub/sub)
+    # Redis (pub/sub event stream)
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: redis
@@ -52,15 +60,7 @@ spec:
             - port: "6379"
               protocol: TCP
 
-    # Kubernetes API server (for future executor pod management)
-    - toEntities:
-        - kube-apiserver
-      toPorts:
-        - ports:
-            - port: "6443"
-              protocol: TCP
-
-    # DNS resolution (required for service discovery)
+    # DNS (kube-dns — required for all service name resolution)
     - toEndpoints:
         - matchLabels:
             k8s-app: kube-dns
@@ -71,8 +71,7 @@ spec:
             - port: "53"
               protocol: TCP
 
-# Default deny-all ingress for the tanzen-worker pod.
-# The worker only receives traffic from Temporal (activity delivery).
+# tanzen-worker: deny all ingress except Prometheus scraping.
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -82,9 +81,8 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: tanzen-worker
+      app: tanzen-worker
   ingress:
-    # Prometheus scraping
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: prometheus
@@ -93,7 +91,9 @@ spec:
             - port: "9464"
               protocol: TCP
 
-# tanzen-api egress: deny by default, allow required backends.
+# tanzen-api (future): deny all egress except required backends.
+# The API pod is not yet deployed in-cluster; this policy takes effect
+# when it is (matched by app: tanzen-api label on the Deployment).
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
@@ -103,11 +103,13 @@ metadata:
 spec:
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: tanzen-api
+      app: tanzen-api
   egress:
+    # PostgreSQL (CNPG primary — read-write service)
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: tanzen-postgres
+            app.kubernetes.io/name: postgresql
+            role: primary
       toPorts:
         - ports:
             - port: "5432"
@@ -123,8 +125,7 @@ spec:
 
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: seaweedfs
-            app.kubernetes.io/component: filer
+            app.kubernetes.io/name: seaweedfs-filer
       toPorts:
         - ports:
             - port: "8888"

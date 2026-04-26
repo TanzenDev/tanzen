@@ -113,6 +113,41 @@ The route must be active for `kubectl` to work.
 ssh tanzen0 "cd ~/dev/tanzen/infra/talos/terraform && terraform destroy -auto-approve"
 ```
 
+### Code execution
+
+Scripts and agent code execution run in sandboxed Deno subprocesses inside the worker pod.
+
+**Python scripts** use `infra/executor/pyodide_runner.ts` (Pyodide WASM in a Deno V8 isolate).
+In dev, it runs via `deno run`. For production, compile it once:
+```bash
+cd infra/executor
+deno compile --no-remote --allow-read --allow-write=/tmp \
+  --output pyodide_runner pyodide_runner.ts
+# Set PYODIDE_RUNNER_PATH=/path/to/pyodide_runner on the worker pod
+```
+
+**Feature flags** are in the `settings` DB table. Toggle via the Settings page or API:
+```bash
+# Enable agent code execution
+curl -X PATCH http://localhost:3000/api/settings \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"agent_code_execution_enabled": true}'
+```
+
+**Cilium NetworkPolicies** are deployed by the Helm chart when `networkPolicies.enabled=true`.
+They work on both kind-tanzen and talos (Cilium installed on both). Disabled by default.
+```bash
+helm upgrade tanzen ./infra/charts/tanzen -n tanzen-dev --set networkPolicies.enabled=true
+```
+
+**Execution checkpoints** are written to S3 at `snapshots/{run_id}/{step_id}/checkpoint.json`
+after every script step. The replay API re-runs any step with its original inputs:
+```bash
+GET  /api/runs/:id/snapshots
+POST /api/runs/:id/steps/:stepId/replay
+```
+
 ## Architecture
 
 ### Data / control flow
