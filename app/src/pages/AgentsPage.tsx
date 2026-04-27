@@ -4,6 +4,7 @@ import { useAgents, useAgent, useCreateAgent, useUpdateAgent, usePromoteAgent, u
 import { api } from "../api/client.js";
 import type { Agent } from "../api/client.js";
 import { Paginator, PAGE_SIZE } from "../components/Paginator.js";
+import { MarkdownEditor } from "../components/MarkdownEditor.js";
 
 interface AgentFormData {
   name: string;
@@ -80,13 +81,10 @@ function AgentForm({
       </div>
       <div>
         <label className="block text-sm font-medium dark:text-slate-300 text-slate-700 mb-1">System prompt</label>
-        <textarea
-          className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-          rows={6}
+        <MarkdownEditor
           value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={setPrompt}
           placeholder="You are a..."
-          required
         />
       </div>
 

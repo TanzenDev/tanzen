@@ -1,1 +1,66 @@
 @import "tailwindcss";
+
+/* Class-based dark mode: .dark on <html> activates dark: utilities */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Light mode shell overrides — only the layout chrome; inner pages themed separately */
+:root:not(.dark) {
+  --shell-bg: theme(colors.white);
+  --shell-sidebar-bg: theme(colors.slate.50);
+  --shell-border: theme(colors.slate.200);
+  --shell-text: theme(colors.slate.900);
+  --shell-text-muted: theme(colors.slate.600);
+  --shell-text-subtle: theme(colors.slate.500);
+  --shell-nav-active-bg: theme(colors.slate.200);
+  --shell-nav-active-text: theme(colors.slate.900);
+  --shell-nav-hover-bg: theme(colors.slate.100);
+  --shell-nav-hover-text: theme(colors.slate.900);
+  --shell-nav-inactive-text: theme(colors.slate.600);
+}
+
+/* Markdown preview pane — scoped to .md-preview so it never leaks */
+.md-preview { line-height: 1.6; }
+.md-preview h1, .md-preview h2, .md-preview h3,
+.md-preview h4, .md-preview h5, .md-preview h6 {
+  font-weight: 600; margin: 0.75em 0 0.25em;
+}
+.md-preview h1 { font-size: 1.25em; }
+.md-preview h2 { font-size: 1.1em; }
+.md-preview h3 { font-size: 1em; }
+.md-preview p  { margin: 0.4em 0; }
+.md-preview ul, .md-preview ol { margin: 0.4em 0; padding-left: 1.5em; }
+.md-preview ul { list-style: disc; }
+.md-preview ol { list-style: decimal; }
+.md-preview li { margin: 0.2em 0; }
+.md-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85em;
+  padding: 0.1em 0.35em;
+  border-radius: 0.2em;
+  background: rgba(0,0,0,0.08);
+}
+.dark .md-preview code { background: rgba(255,255,255,0.1); }
+.md-preview pre { margin: 0.5em 0; border-radius: 0.25em; overflow-x: auto; }
+.md-preview pre code { background: transparent; padding: 0; }
+.md-preview blockquote {
+  border-left: 3px solid currentColor; opacity: 0.7;
+  margin: 0.5em 0; padding-left: 0.75em;
+}
+.md-preview strong { font-weight: 600; }
+.md-preview em     { font-style: italic; }
+.md-preview a      { text-decoration: underline; opacity: 0.8; }
+.md-preview hr     { border: none; border-top: 1px solid currentColor; opacity: 0.2; margin: 0.75em 0; }
+
+:root.dark {
+  --shell-bg: theme(colors.slate.900);
+  --shell-sidebar-bg: theme(colors.slate.900);
+  --shell-border: theme(colors.slate.700);
+  --shell-text: theme(colors.slate.100);
+  --shell-text-muted: theme(colors.slate.300);
+  --shell-text-subtle: theme(colors.slate.500);
+  --shell-nav-active-bg: theme(colors.slate.700);
+  --shell-nav-active-text: theme(colors.white);
+  --shell-nav-hover-bg: theme(colors.slate.700);
+  --shell-nav-hover-text: theme(colors.white);
+  --shell-nav-inactive-text: theme(colors.slate.300);
+}

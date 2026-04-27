@@ -38,11 +38,36 @@ npx vitest run src/extensions/registry.test.tsx   # single test file
 ```bash
 cd server
 bun install
-bun run src/server/index.ts   # dev server on $PORT (default 3000)
-bun run build                 # compile to dist/
+bun run dev      # dev server on :3000 (reads server/.env automatically)
+bun run build    # compile to dist/
 bun run typecheck
-bun test                      # run tests
+bun test         # run tests
 ```
+
+**First-time and after credential rotation** — the server needs credentials pulled from
+the cluster. `dev-env.sh` writes `server/.env` (gitignored) and ensures all required
+port-forwards are active:
+
+```bash
+./infra/scripts/dev-env.sh               # uses namespace tanzen-dev by default
+./infra/scripts/dev-env.sh --namespace my-ns   # custom namespace
+
+# If port-forwards are already running (e.g. managed externally):
+./infra/scripts/dev-env.sh --no-portforward
+
+# Then start the server:
+cd server && bun run dev
+```
+
+`dev-env.sh` manages port-forwards for Postgres (:5432), SeaweedFS (:8333),
+Redis (:6379), and Temporal (:7233), and also starts `kubectl proxy` on :8001.
+It is idempotent — re-running it refreshes `server/.env` without restarting
+already-bound port-forwards.
+
+`kubectl proxy` is required for the Secrets and MCP-servers pages. Bun's native
+fetch ignores custom HTTPS agents, so `@kubernetes/client-node`'s `skipTLSVerify`
+flag has no effect. Routing k8s calls through `kubectl proxy` (plain HTTP on
+localhost) bypasses this entirely and is unaffected by cluster cert rotation.
 
 ### Worker (`worker/`)
 
