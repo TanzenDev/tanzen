@@ -36,19 +36,19 @@ export function MetricsPage() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold">Metrics</h1>
         <div className="flex items-center gap-3">
-          <label className="text-xs text-slate-400">From</label>
+          <label className="text-xs dark:text-slate-400 text-slate-600">From</label>
           <input
             type="date"
             value={from}
             onChange={(e) => setFrom(e.target.value)}
-            className="rounded bg-slate-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded dark:bg-slate-700 bg-slate-100 px-2 py-1 text-sm dark:text-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <label className="text-xs text-slate-400">To</label>
+          <label className="text-xs dark:text-slate-400 text-slate-600">To</label>
           <input
             type="date"
             value={to}
             onChange={(e) => setTo(e.target.value)}
-            className="rounded bg-slate-700 px-2 py-1 text-sm text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="rounded dark:bg-slate-700 bg-slate-100 px-2 py-1 text-sm dark:text-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
       </div>
@@ -69,10 +69,10 @@ export function MetricsPage() {
           ].map(({ label, value }) => (
             <div
               key={label}
-              className="rounded-lg border border-slate-700 bg-slate-800 p-4 text-center"
+              className="rounded-lg border dark:border-slate-700 border-slate-200 dark:bg-slate-800 bg-white p-4 text-center"
             >
               <p className="text-2xl font-bold">{value}</p>
-              <p className="text-xs text-slate-400 mt-1">{label}</p>
+              <p className="text-xs dark:text-slate-400 text-slate-600 mt-1">{label}</p>
             </div>
           ))}
         </div>
@@ -80,10 +80,10 @@ export function MetricsPage() {
 
       {byWorkflow.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider dark:text-slate-400 text-slate-600 mb-3">
             Runs by workflow
           </h2>
-          <div className="rounded-lg border border-slate-700 bg-slate-800 p-4">
+          <div className="rounded-lg border dark:border-slate-700 border-slate-200 dark:bg-slate-800 bg-white p-4">
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={byWorkflow} margin={{ top: 4, right: 8, left: -16, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
@@ -107,19 +107,19 @@ export function MetricsPage() {
 
       {tokenSummary.length > 0 && (
         <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400 mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wider dark:text-slate-400 text-slate-600 mb-3">
             Token usage by agent
           </h2>
-          <div className="overflow-hidden rounded-lg border border-slate-700">
-            <table className="w-full text-sm bg-slate-900">
-              <thead className="bg-slate-800 text-slate-400 text-xs uppercase">
+          <div className="overflow-hidden rounded-lg border dark:border-slate-700 border-slate-200">
+            <table className="w-full text-sm dark:bg-slate-900 bg-white">
+              <thead className="dark:bg-slate-800 bg-white dark:text-slate-400 text-slate-600 text-xs uppercase">
                 <tr>
                   <th className="px-4 py-3 text-left">Agent</th>
                   <th className="px-4 py-3 text-right">Tokens</th>
                   <th className="px-4 py-3 text-right">Cost (USD)</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700">
+              <tbody className="divide-y dark:divide-slate-700 divide-slate-200">
                 {tokenSummary.map((row) => (
                   <tr key={row.agent_id}>
                     <td className="px-4 py-3 font-mono text-xs">{row.agent_id.slice(0, 12)}…</td>

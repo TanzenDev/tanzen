@@ -234,7 +234,7 @@ export function irToGraph(ir: WorkflowIR): { nodes: Node[]; edges: Edge[] } {
   let prevId: string | null = null;
 
   function link(source: string, target: string) {
-    edges.push({ id: `e-${source}-${target}`, source, target, markerEnd: { type: MarkerType.ArrowClosed } });
+    edges.push({ id: `e-${source}-${target}`, source, target, sourceHandle: "right", targetHandle: "left", markerEnd: { type: MarkerType.ArrowClosed } });
   }
 
   for (const step of ir.steps) {
