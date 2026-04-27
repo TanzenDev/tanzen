@@ -20,7 +20,7 @@ import { requireRole } from "../auth.js";
 
 async function loadScriptRegistry(): Promise<ScriptRegistry> {
   const rows = await sql`
-    SELECT cs.name, cs.allowed_hosts, cs.allowed_env, cs.max_timeout_seconds,
+    SELECT cs.name, cs.language, cs.allowed_hosts, cs.allowed_env, cs.max_timeout_seconds,
            csv.version, csv.code_key AS s3_key
     FROM custom_scripts cs
     JOIN custom_script_versions csv
@@ -31,6 +31,7 @@ async function loadScriptRegistry(): Promise<ScriptRegistry> {
     {
       version: r.version as string,
       s3Key: r.s3_key as string,
+      language: (r.language as string) ?? "typescript",
       allowedHosts: r.allowed_hosts as string,
       allowedEnv: r.allowed_env as string,
       maxTimeoutSeconds: r.max_timeout_seconds as number,

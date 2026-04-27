@@ -14,11 +14,22 @@ const routes = new Hono<Vars>();
 
 const KNOWN_KEYS = new Set(["scripts_enabled", "agent_code_execution_enabled"]);
 
+// postgres.js returns JSONB booleans as strings in some contexts; normalise on read.
+function parseSettingValue(v: unknown): unknown {
+  if (typeof v === "boolean") return v;
+  if (v === "true") return true;
+  if (v === "false") return false;
+  if (typeof v === "string") {
+    try { return JSON.parse(v); } catch { return v; }
+  }
+  return v;
+}
+
 async function getAllSettings(): Promise<Record<string, unknown>> {
   const rows = await sql`SELECT key, value FROM settings`;
   const out: Record<string, unknown> = {};
   for (const row of rows) {
-    out[row.key as string] = row.value;
+    out[row.key as string] = parseSettingValue(row.value);
   }
   return out;
 }
@@ -33,9 +44,12 @@ routes.patch("/", requireRole("admin"), async (c) => {
     if (!KNOWN_KEYS.has(key)) {
       return c.json({ error: `Unknown setting key: '${key}'` }, 400);
     }
+    // Use to_jsonb() so Postgres handles boolean → JSONB boolean conversion
+    // rather than relying on postgres.js parameter type inference.
+    const boolVal = value === true;
     await sql`
       INSERT INTO settings (key, value, updated_at)
-      VALUES (${key}, ${JSON.stringify(value)}::jsonb, now())
+      VALUES (${key}, to_jsonb(${boolVal}), now())
       ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()
     `;
   }

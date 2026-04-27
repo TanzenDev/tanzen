@@ -93,10 +93,42 @@ routes.get("/:runId", async (c) => {
 routes.get("/:runId/events", async (c) => {
   const runId = c.req.param("runId")!;
 
-  const [run] = await sql`SELECT id FROM runs WHERE id = ${runId}`;
+  const [run] = await sql`SELECT id, status FROM runs WHERE id = ${runId}`;
   if (!run) return c.json({ error: "Not found" }, 404);
 
+  const isTerminal = run.status === "succeeded" || run.status === "failed";
+
   return streamSSE(c, async (stream) => {
+    // Send initial connected event
+    try {
+      await stream.writeSSE({ data: JSON.stringify({ event_type: "connected", run_id: runId }), event: "connected" });
+    } catch { /* ignore */ }
+
+    // For completed runs: replay stored events from DB and close immediately.
+    if (isTerminal) {
+      const storedEvents = await sql`
+        SELECT event_type, step_id, data, ts
+        FROM run_events
+        WHERE run_id = ${runId}
+        ORDER BY ts ASC
+      `;
+      for (const ev of storedEvents) {
+        const payload = JSON.stringify({
+          event_type: ev.event_type,
+          run_id: runId,
+          step_id: ev.step_id ?? undefined,
+          ts: ev.ts,
+          ...((ev.data as Record<string, unknown>) ?? {}),
+        });
+        try {
+          await stream.writeSSE({ data: payload, event: "run_event" });
+        } catch { break; }
+      }
+      stream.close();
+      return;
+    }
+
+    // For active runs: subscribe to Redis and stream live events.
     const sub = createSubscriber();
     const channel = runChannel(runId);
 
@@ -109,11 +141,6 @@ routes.get("/:runId/events", async (c) => {
         // Client disconnected
       }
     }, PING_INTERVAL_MS);
-
-    // Send initial event so the client knows the stream is live
-    try {
-      await stream.writeSSE({ data: JSON.stringify({ event_type: "connected", run_id: runId }), event: "connected" });
-    } catch { /* ignore */ }
 
     await new Promise<void>((resolve) => {
       sub.subscribe(channel, (err) => {

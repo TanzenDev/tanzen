@@ -57,7 +57,10 @@ app.use("*", cors({
 }));
 
 // Global rate limit: 300 req/min per IP (covers unauthenticated endpoints too)
-app.use("*", rateLimit({ windowMs: 60_000, max: 300 }));
+// Override with RATE_LIMIT_GLOBAL / RATE_LIMIT_API env vars for load-test environments.
+const RL_GLOBAL = parseInt(process.env["RATE_LIMIT_GLOBAL"] ?? "300", 10);
+const RL_API    = parseInt(process.env["RATE_LIMIT_API"]    ?? "60",  10);
+app.use("*", rateLimit({ windowMs: 60_000, max: RL_GLOBAL }));
 
 // Health check — no auth required
 app.get("/health", (c) => c.json({ ok: true, ts: new Date().toISOString() }));
@@ -75,7 +78,7 @@ const api = new Hono();
 api.use("*", authMiddleware);
 
 // Per-user rate limit on mutating operations (60 req/min)
-api.use("*", rateLimit({ windowMs: 60_000, max: 60, keyFn: userKey }));
+api.use("*", rateLimit({ windowMs: 60_000, max: RL_API, keyFn: userKey }));
 
 api.route("/workflows", workflowRoutes);
 api.route("/agents",   agentRoutes);
