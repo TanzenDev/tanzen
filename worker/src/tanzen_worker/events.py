@@ -24,6 +24,7 @@ class EventType(StrEnum):
     STEP_STARTED   = "step_started"
     STEP_COMPLETED = "step_completed"
     STEP_FAILED    = "step_failed"
+    STEP_MESSAGE   = "step_message"   # streaming LLM text delta — Redis-only, not persisted
     GATE_OPENED    = "gate_opened"
     GATE_RESOLVED  = "gate_resolved"
     RUN_COMPLETED  = "run_completed"
@@ -55,14 +56,22 @@ def _run_channel(run_id: str) -> str:
 
 
 async def publish_event(event: RunEvent) -> None:
-    """Publish a run event to the per-run Redis channel and persist to DB."""
+    """Publish a run event to the per-run Redis channel and persist to DB.
+
+    STEP_MESSAGE events are Redis-only (high-frequency streaming deltas;
+    the completed artifact holds the full text).
+    """
     # Redis pub/sub — best-effort, for live SSE
     try:
         r = aioredis.from_url(_redis_url(), decode_responses=True)
         async with r:
             await r.publish(_run_channel(event.run_id), event.to_json())
-    except Exception:
+    except BaseException:
         pass
+
+    # step_message events are not persisted — too frequent, full text in artifact
+    if event.event_type == EventType.STEP_MESSAGE:
+        return
 
     # Persist to run_events for historical replay — best-effort
     try:
@@ -83,7 +92,7 @@ async def publish_event(event: RunEvent) -> None:
                 )
             finally:
                 await conn.close()
-    except Exception:
+    except BaseException:
         pass
 
 

@@ -22,6 +22,7 @@ from botocore.config import Config
 from temporalio import activity
 
 from tanzen_worker.checkpoints import write_checkpoint
+from tanzen_worker.events import EventType, RunEvent, publish_event
 
 # ---------------------------------------------------------------------------
 # I/O types
@@ -65,7 +66,7 @@ _SCRIPTS_BUCKET = os.environ.get("S3_SCRIPTS_BUCKET", "scripts")
 # Default: run pyodide_runner.ts via `deno run` (development mode).
 _PYODIDE_RUNNER_PATH = os.environ.get(
     "PYODIDE_RUNNER_PATH",
-    os.path.join(os.path.dirname(__file__), "..", "..", "..", "infra", "executor", "pyodide_runner.ts"),
+    os.path.join(os.path.dirname(__file__), "..", "..", "infra", "executor", "pyodide_runner.ts"),
 )
 _PYODIDE_RUNNER_IS_BINARY = not _PYODIDE_RUNNER_PATH.endswith(".ts")
 
@@ -110,16 +111,31 @@ async def run_script_activity(inp: ScriptActivityInput) -> ScriptActivityOutput:
 
     _validate_allowed_env(inp.allowed_env)
 
-    # 1. Fetch script source from S3
-    s3 = _s3_client()
-    obj = s3.get_object(Bucket=_SCRIPTS_BUCKET, Key=inp.s3_key)
-    source_code: str = obj["Body"].read().decode("utf-8")
+    await publish_event(RunEvent(
+        run_id=inp.run_id, event_type=EventType.STEP_STARTED,
+        step_id=inp.step_id,
+        data={"script_name": inp.script_name, "language": inp.language},
+    ))
 
-    if inp.language == "python":
-        output, state_b64 = await _run_python(inp, source_code)
-    else:
-        output = await _run_typescript(inp, source_code)
-        state_b64 = None
+    try:
+        # 1. Fetch script source from S3
+        s3 = _s3_client()
+        obj = s3.get_object(Bucket=_SCRIPTS_BUCKET, Key=inp.s3_key)
+        source_code: str = obj["Body"].read().decode("utf-8")
+
+        if inp.language == "python":
+            output, state_b64 = await _run_python(inp, source_code)
+        else:
+            output = await _run_typescript(inp, source_code)
+            state_b64 = None
+    except Exception as exc:
+        _duration_ms = (time.monotonic() - _t0) * 1000.0
+        await publish_event(RunEvent(
+            run_id=inp.run_id, event_type=EventType.STEP_FAILED,
+            step_id=inp.step_id,
+            data={"error": str(exc), "script_name": inp.script_name},
+        ))
+        raise
 
     duration_ms = (time.monotonic() - _t0) * 1000.0
     activity.logger.info(
@@ -128,9 +144,15 @@ async def run_script_activity(inp: ScriptActivityInput) -> ScriptActivityOutput:
                "language": inp.language, "duration_ms": duration_ms},
     )
 
+    await publish_event(RunEvent(
+        run_id=inp.run_id, event_type=EventType.STEP_COMPLETED,
+        step_id=inp.step_id,
+        data={"script_name": inp.script_name, "duration_ms": round(duration_ms)},
+    ))
+
     # Write execution checkpoint for time-machine replay.
     try:
-        write_checkpoint(
+        await write_checkpoint(
             run_id=inp.run_id,
             step_id=inp.step_id,
             script_key=inp.s3_key,
@@ -146,7 +168,7 @@ async def run_script_activity(inp: ScriptActivityInput) -> ScriptActivityOutput:
             duration_ms=duration_ms,
             state_b64=state_b64,
         )
-    except Exception as e:
+    except BaseException as e:
         activity.logger.warning("checkpoint write failed", extra={"error": str(e)})
 
     return ScriptActivityOutput(
@@ -157,10 +179,19 @@ async def run_script_activity(inp: ScriptActivityInput) -> ScriptActivityOutput:
     )
 
 
+_TS_WRAPPER_PRE = """\
+const __raw = await new Response(Deno.stdin.readable).text();
+const __p = JSON.parse(__raw);
+const input: unknown = __p.input;
+const params: Record<string, unknown> = __p.params ?? {};
+let output: unknown = undefined;
+"""
+_TS_WRAPPER_POST = "\nconsole.log(JSON.stringify(output));\n"
+
 async def _run_typescript(inp: ScriptActivityInput, source_code: str) -> Any:
-    suffix = ".ts"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False, dir="/tmp") as tmp:
-        tmp.write(source_code)
+    wrapped = _TS_WRAPPER_PRE + source_code + _TS_WRAPPER_POST
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".ts", delete=False, dir="/tmp") as tmp:
+        tmp.write(wrapped)
         script_path = tmp.name
 
     try:
@@ -187,10 +218,25 @@ async def _run_python(inp: ScriptActivityInput, source_code: str) -> tuple[Any, 
     if _PYODIDE_RUNNER_IS_BINARY:
         cmd = [_PYODIDE_RUNNER_PATH]
     else:
-        flags = _deno_base_flags(inp)
-        cmd = ["deno", "run"] + flags + [_PYODIDE_RUNNER_PATH]
+        # pyodide_runner.ts is trusted internal code running inside its own
+        # deno.json project. It needs read access for pyodide WASM files and
+        # write access to /tmp for session data. Network is not needed since
+        # packages are pre-cached in executor/node_modules.
+        executor_dir = os.path.dirname(os.path.abspath(_PYODIDE_RUNNER_PATH))
+        flags = [
+            "--no-prompt",
+            f"--allow-read={executor_dir}",
+            "--allow-write=/tmp",
+            "--allow-env",
+            "--deny-net",
+            "--deny-run",
+            "--deny-ffi",
+            "--v8-flags=--max-heap-size=512",
+        ]
+        cmd = ["deno", "run"] + flags + [os.path.abspath(_PYODIDE_RUNNER_PATH)]
 
-    stdout_bytes, _ = await _run_subprocess(cmd, stdin_payload, inp)
+    executor_dir = os.path.dirname(os.path.abspath(_PYODIDE_RUNNER_PATH))
+    stdout_bytes, _ = await _run_subprocess(cmd, stdin_payload, inp, cwd=executor_dir)
     result = _parse_stdout(stdout_bytes, inp.script_name)
 
     # Python runner returns { output, state_b64? }
@@ -199,12 +245,10 @@ async def _run_python(inp: ScriptActivityInput, source_code: str) -> tuple[Any, 
     return result, None
 
 
-def _deno_base_flags(inp: ScriptActivityInput) -> list[str]:
-    flags = [
-        "--no-prompt",
-        "--no-remote",
-        "--v8-flags=--max-heap-size=256",
-    ]
+def _deno_base_flags(inp: ScriptActivityInput, include_no_remote: bool = True) -> list[str]:
+    flags = ["--no-prompt", "--v8-flags=--max-heap-size=256"]
+    if include_no_remote:
+        flags.append("--no-remote")
     if inp.allowed_hosts:
         flags.append(f"--allow-net={inp.allowed_hosts}")
     else:
@@ -221,12 +265,14 @@ async def _run_subprocess(
     cmd: list[str],
     stdin_payload: bytes,
     inp: ScriptActivityInput,
+    cwd: str | None = None,
 ) -> tuple[bytes, bytes]:
     proc = await asyncio.create_subprocess_exec(
         *cmd,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        cwd=cwd,
     )
     try:
         stdout_bytes, stderr_bytes = await asyncio.wait_for(

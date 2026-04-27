@@ -106,7 +106,14 @@ class DynamicWorkflow:
         run_id = workflow.info().workflow_id
         state = RunState(params=params)
         try:
-            return await self._execute(run_id, ir, state)
+            result = await self._execute(run_id, ir, state)
+            await workflow.execute_activity(
+                update_run_status_activity,
+                args=[run_id, "succeeded", None],
+                start_to_close_timeout=timedelta(seconds=10),
+                retry_policy=RetryPolicy(maximum_attempts=3),
+            )
+            return result
         except Exception as exc:
             # Unwrap Temporal's ActivityError (__cause__ = ApplicationError w/ real msg)
             cause = exc.__cause__ or exc
@@ -281,6 +288,7 @@ class DynamicWorkflow:
                 allowed_hosts=step.get("allowedHosts", ""),
                 allowed_env=step.get("allowedEnv", ""),
                 timeout_seconds=step.get("timeoutSeconds", 30),
+                language=step.get("language", "typescript"),
             ),
             start_to_close_timeout=timedelta(seconds=step.get("timeoutSeconds", 30) + 10),
             retry_policy=RetryPolicy(maximum_attempts=1),

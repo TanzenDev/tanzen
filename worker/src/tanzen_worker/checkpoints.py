@@ -15,6 +15,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import uuid
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from typing import Any
@@ -57,7 +58,7 @@ class Checkpoint:
     has_state: bool = False
 
 
-def write_checkpoint(
+async def write_checkpoint(
     run_id: str,
     step_id: str,
     script_key: str,
@@ -95,6 +96,39 @@ def write_checkpoint(
         state_bytes = base64.b64decode(state_b64)
         s3.put_object(Bucket=_ARTIFACTS_BUCKET, Key=state_key, Body=state_bytes,
                       ContentType="application/octet-stream")
+
+    # Record the snapshot in Postgres so the API can list it.
+    try:
+        import asyncio, asyncpg  # type: ignore[import]
+        db_url = os.environ.get("DATABASE_URL", "")
+        if db_url:
+            conn = None
+            for _attempt in range(5):
+                try:
+                    conn = await asyncpg.connect(db_url, timeout=10)
+                    break
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    if _attempt == 4:
+                        raise
+                    await asyncio.sleep(2.0)
+            assert conn is not None
+            try:
+                await conn.execute(
+                    """
+                    INSERT INTO step_snapshots (id, run_id, step_id, checkpoint_key, has_state)
+                    VALUES ($1, $2, $3, $4, $5)
+                    ON CONFLICT (run_id, step_id) DO UPDATE
+                      SET checkpoint_key = excluded.checkpoint_key,
+                          has_state = excluded.has_state
+                    """,
+                    str(uuid.uuid4()), run_id, step_id, key, state_b64 is not None,
+                )
+            finally:
+                await conn.close()
+    except BaseException:
+        pass  # checkpoint in S3 is the source of truth; DB row is best-effort
 
     return key
 

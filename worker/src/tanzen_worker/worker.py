@@ -37,7 +37,7 @@ from tanzen_worker.activities import (
 )
 from tanzen_worker.builtin_tasks import run_builtin_task_activity
 from tanzen_worker.script_runner import run_script_activity
-from tanzen_worker.otel import init_worker_otel
+from tanzen_worker.otel import init_worker_otel, init_worker_traces
 
 TEMPORAL_HOST = os.environ.get("TEMPORAL_HOST", "localhost:7233")
 TEMPORAL_NAMESPACE = os.environ.get("TEMPORAL_NAMESPACE", "default")
@@ -91,6 +91,7 @@ def _load_extensions() -> tuple[list, list]:
 
 async def _run():
     init_worker_otel()
+    init_worker_traces()
     extra_activities, extra_workflows = _load_extensions()
     client = await Client.connect(TEMPORAL_HOST, namespace=TEMPORAL_NAMESPACE)
     worker = Worker(

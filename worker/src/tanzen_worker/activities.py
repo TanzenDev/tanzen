@@ -25,7 +25,7 @@ from temporalio import activity
 
 from tanzen_worker.agent_config import AgentConfig, load_agent_config_from_s3
 from tanzen_worker.events import EventType, RunEvent, publish_event
-from tanzen_worker.otel import record_activity_complete, record_llm_usage
+from tanzen_worker.otel import get_tracer, record_activity_complete, record_llm_usage
 
 
 # ---------------------------------------------------------------------------
@@ -107,14 +107,28 @@ class WriteOutputActivityInput:
 # Postgres write helpers
 # ---------------------------------------------------------------------------
 
+async def _pg_connect_with_retry(db_url: str, retries: int = 5, delay: float = 2.0):
+    """Connect to Postgres with retries — port-forward can drop and restart."""
+    import asyncio, asyncpg  # type: ignore[import]
+    for attempt in range(retries):
+        try:
+            return await asyncpg.connect(db_url, timeout=10)
+        except asyncio.CancelledError:
+            raise  # propagate task cancellation immediately — don't retry
+        except Exception:
+            if attempt == retries - 1:
+                raise
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
+
+
 async def _update_run_status(run_id: str, status: str, error: str | None = None) -> None:
     """Update run status in Postgres. Best-effort: never raises."""
     try:
-        import asyncpg as _asyncpg  # type: ignore[import]
         db_url = os.environ.get("DATABASE_URL", "")
         if not db_url:
             return
-        conn = await _asyncpg.connect(db_url)
+        conn = await _pg_connect_with_retry(db_url)
         try:
             await conn.execute(
                 "UPDATE runs SET status = $1, completed_at = now(), error = $3 WHERE id = $2",
@@ -122,7 +136,7 @@ async def _update_run_status(run_id: str, status: str, error: str | None = None)
             )
         finally:
             await conn.close()
-    except Exception:
+    except BaseException:
         pass
 
 
@@ -135,7 +149,6 @@ async def _resolve_agent_config_key(agent_id: str, version: str) -> str | None:
             return None
         conn = await asyncpg.connect(db_url)
         try:
-            # Try matching by agent name first, then by UUID
             row = await conn.fetchrow(
                 """
                 SELECT av.config_key
@@ -150,7 +163,7 @@ async def _resolve_agent_config_key(agent_id: str, version: str) -> str | None:
             return row["config_key"] if row else None
         finally:
             await conn.close()
-    except Exception:
+    except BaseException:
         return None
 
 
@@ -191,8 +204,8 @@ async def _write_agent_step_record(
             )
         finally:
             await conn.close()
-    except Exception:
-        pass
+    except BaseException as _exc:
+        activity.logger.warning("run_steps write failed", extra={"error": f"{type(_exc).__name__}: {_exc}"})
 
 
 # ---------------------------------------------------------------------------
@@ -286,12 +299,62 @@ async def run_agent_activity(inp: AgentActivityInput) -> AgentActivityOutput:
         if inp.resolved_params:
             user_prompt += "\n\nParams: " + json.dumps(inp.resolved_params, default=str)
 
-        # 5. Run the agent
-        result = await agent.run(user_prompt, model_settings=settings)
+        # 5. Stream the agent — publish text deltas as step_message events.
+        # One Redis connection is opened for the whole streaming session to avoid
+        # per-event connection overhead (token rate can exceed 50 events/s).
+        output_text = ""
+        token_count = 0
+        tracer = get_tracer()
+        with tracer.start_as_current_span("agent.run_stream") as span:
+            span.set_attribute("tanzen.run_id", inp.run_id)
+            span.set_attribute("tanzen.step_id", step_id)
+            span.set_attribute("tanzen.agent_id", agent_id)
+
+            import redis.asyncio as _aioredis
+            stream_redis = None
+            stream_channel = f"run:{inp.run_id}"
+            try:
+                stream_redis = _aioredis.from_url(
+                    os.environ.get("REDIS_URL", "redis://localhost:6379/0"),
+                    decode_responses=True,
+                )
+            except Exception:
+                pass
+
+            try:
+                async with agent.run_stream(user_prompt, model_settings=settings) as stream:
+                    async for delta in stream.stream_text(delta=True):
+                        if delta:
+                            activity.heartbeat()
+                            if stream_redis:
+                                try:
+                                    event = RunEvent(
+                                        run_id=inp.run_id,
+                                        event_type=EventType.STEP_MESSAGE,
+                                        step_id=step_id,
+                                        data={"delta": delta},
+                                    )
+                                    await stream_redis.publish(stream_channel, event.to_json())
+                                except Exception:
+                                    pass
+                    output_text = await stream.get_output()
+                    try:
+                        usage = stream.usage()
+                        token_count = usage.total_tokens or 0
+                        span.set_attribute("tanzen.token_count", token_count)
+                    except Exception:
+                        pass
+            finally:
+                if stream_redis:
+                    try:
+                        await stream_redis.aclose()
+                    except Exception:
+                        pass
 
     except Exception as exc:
         _duration_ms = (time.monotonic() - _t0) * 1000.0
         error_str = str(exc)
+        activity.logger.error("run_agent_activity failed", extra={"error": error_str, "step_id": step_id})
         await publish_event(RunEvent(
             run_id=inp.run_id, event_type=EventType.STEP_FAILED,
             step_id=step_id, data={"error": error_str},
@@ -302,15 +365,6 @@ async def run_agent_activity(inp: AgentActivityInput) -> AgentActivityOutput:
             status="failed", error=error_str,
         )
         raise
-
-    output_text = result.output
-
-    token_count = 0
-    try:
-        usage = result.usage()
-        token_count = usage.total_tokens or 0
-    except Exception:
-        pass
 
     # 6. Write output artifact
     output_key = _put_artifact(s3, inp.run_id, step_id, "output", {
@@ -380,7 +434,7 @@ async def _write_gate_to_postgres(gate_id: str, run_id: str, step_id: str, assig
             )
         finally:
             await conn.close()
-    except Exception:
+    except BaseException:
         pass  # best-effort; gate resolution via Temporal signal regardless
 
 
