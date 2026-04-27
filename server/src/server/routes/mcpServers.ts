@@ -19,10 +19,7 @@ const routes = new Hono<Vars>();
 
 const NAMESPACE = process.env["K8S_NAMESPACE"] ?? "tanzen-dev";
 
-let k8sApi: k8s.CoreV1Api | null = null;
-
 function getK8sApi(): k8s.CoreV1Api | null {
-  if (k8sApi) return k8sApi;
   try {
     const kc = new k8s.KubeConfig();
     const proxyUrl = process.env["KUBECTL_PROXY_URL"];
@@ -37,8 +34,7 @@ function getK8sApi(): k8s.CoreV1Api | null {
     } else {
       kc.loadFromDefault();
     }
-    k8sApi = kc.makeApiClient(k8s.CoreV1Api);
-    return k8sApi;
+    return kc.makeApiClient(k8s.CoreV1Api);
   } catch {
     return null;
   }

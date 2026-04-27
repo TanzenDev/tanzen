@@ -18,13 +18,11 @@ const routes = new Hono();
 const K8S_NAMESPACE = process.env["K8S_NAMESPACE"] ?? "tanzen-dev";
 
 // ---------------------------------------------------------------------------
-// k8s client — lazy singleton, same pattern as mcpServers.ts
+// k8s client — fresh per request so kubeconfig/CA changes (e.g. new cluster)
+// are picked up without restarting the server.
 // ---------------------------------------------------------------------------
 
-let _api: k8s.CoreV1Api | null = null;
-
 function getK8sApi(): k8s.CoreV1Api | null {
-  if (_api) return _api;
   try {
     const kc = new k8s.KubeConfig();
     const proxyUrl = process.env["KUBECTL_PROXY_URL"];
@@ -38,8 +36,7 @@ function getK8sApi(): k8s.CoreV1Api | null {
     } else {
       kc.loadFromDefault();
     }
-    _api = kc.makeApiClient(k8s.CoreV1Api);
-    return _api;
+    return kc.makeApiClient(k8s.CoreV1Api);
   } catch {
     return null;
   }
