@@ -1,5 +1,7 @@
 import { useState, useEffect, Suspense, lazy } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useScripts, useScript, useScriptCode, useCreateScript, useUpdateScript, useDeleteScript } from "../api/hooks.js";
+import { api } from "../api/client.js";
 import type { Script } from "../api/client.js";
 import { Paginator, PAGE_SIZE } from "../components/Paginator.js";
 
@@ -37,7 +39,7 @@ type Language = "typescript" | "python";
 
 function LanguageToggle({ value, onChange }: { value: Language; onChange: (l: Language) => void }) {
   return (
-    <div className="inline-flex rounded overflow-hidden border border-slate-600 text-xs font-medium">
+    <div className="inline-flex rounded overflow-hidden border dark:border-slate-600 border-slate-300 text-xs font-medium">
       {(["typescript", "python"] as Language[]).map((lang) => (
         <button
           key={lang}
@@ -46,7 +48,7 @@ function LanguageToggle({ value, onChange }: { value: Language; onChange: (l: La
           className={`px-3 py-1 transition-colors ${
             value === lang
               ? "bg-cyan-600 text-white"
-              : "bg-slate-700 text-slate-300 hover:bg-slate-600"
+              : "dark:bg-slate-700 bg-slate-100 dark:text-slate-300 text-slate-700 dark:hover:bg-slate-600 hover:bg-slate-200"
           }`}
         >
           {lang === "typescript" ? "TypeScript" : "Python"}
@@ -130,14 +132,14 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
   }
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-6">
+    <div className="rounded-lg border dark:border-slate-700 border-slate-200 dark:bg-slate-800 bg-white p-6">
       <h2 className="text-lg font-bold mb-4">{isEdit ? `Edit: ${initial.name}` : "New script"}</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         {!isEdit && (
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Name (slug)</label>
+            <label className="block text-sm font-medium dark:text-slate-300 text-slate-700 mb-1">Name (slug)</label>
             <input
-              className="w-full rounded bg-slate-700 px-3 py-2 text-sm text-white font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 font-mono dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
               value={name}
               onChange={(e) => setName(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "-"))}
               placeholder="my-script"
@@ -151,9 +153,9 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
         )}
 
         <div>
-          <label className="block text-sm font-medium text-slate-300 mb-1">Description</label>
+          <label className="block text-sm font-medium dark:text-slate-300 text-slate-700 mb-1">Description</label>
           <input
-            className="w-full rounded bg-slate-700 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Short description of what this script does"
@@ -162,12 +164,12 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
 
         <div>
           <div className="flex items-center justify-between mb-1">
-            <label className="block text-sm font-medium text-slate-300">Code</label>
+            <label className="block text-sm font-medium dark:text-slate-300 text-slate-700">Code</label>
             {!isEdit && <LanguageToggle value={language} onChange={handleLanguageChange} />}
           </div>
-          <div className="rounded overflow-hidden border border-slate-700" style={{ height: 320 }}>
+          <div className="rounded overflow-hidden border dark:border-slate-700 border-slate-200" style={{ height: 320 }}>
             <Suspense fallback={
-              <div className="h-full bg-slate-900 flex items-center justify-center text-slate-500 text-sm">
+              <div className="h-full dark:bg-slate-900 bg-slate-100 flex items-center justify-center text-slate-500 text-sm">
                 Loading editor…
               </div>
             }>
@@ -196,9 +198,9 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Allowed hosts</label>
+            <label className="block text-sm font-medium dark:text-slate-300 text-slate-700 mb-1">Allowed hosts</label>
             <input
-              className="w-full rounded bg-slate-700 px-3 py-2 text-sm text-white font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 font-mono dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
               value={allowedHosts}
               onChange={(e) => setAllowedHosts(e.target.value)}
               placeholder="api.example.com,data.example.org"
@@ -206,9 +208,9 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
             <p className="mt-1 text-xs text-slate-500">Comma-separated. Empty = no network access.</p>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Allowed env vars</label>
+            <label className="block text-sm font-medium dark:text-slate-300 text-slate-700 mb-1">Allowed env vars</label>
             <input
-              className="w-full rounded bg-slate-700 px-3 py-2 text-sm text-white font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 font-mono dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
               value={allowedEnv}
               onChange={(e) => setAllowedEnv(e.target.value)}
               placeholder="API_KEY,REGION"
@@ -218,12 +220,12 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
         </div>
 
         <div className="w-40">
-          <label className="block text-sm font-medium text-slate-300 mb-1">Max timeout (s)</label>
+          <label className="block text-sm font-medium dark:text-slate-300 text-slate-700 mb-1">Max timeout (s)</label>
           <input
             type="number"
             min={1}
             max={3600}
-            className="w-full rounded bg-slate-700 px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+            className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 focus:outline-none focus:ring-2 focus:ring-cyan-500"
             value={maxTimeout}
             onChange={(e) => setMaxTimeout(e.target.value)}
           />
@@ -242,7 +244,7 @@ function ScriptForm({ initial, onCancel, onSaved }: ScriptFormProps) {
           <button
             type="button"
             onClick={onCancel}
-            className="rounded bg-slate-600 px-4 py-2 text-sm font-medium text-white hover:bg-slate-500"
+            className="rounded dark:bg-slate-600 bg-slate-200 px-4 py-2 text-sm font-medium dark:text-white text-slate-900 dark:hover:bg-slate-500 hover:bg-slate-300"
           >
             Cancel
           </button>
@@ -276,7 +278,7 @@ function ScriptDetail({ scriptId, onEdit, onClose }: ScriptDetailProps) {
   }
 
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-800 p-6 space-y-4">
+    <div className="rounded-lg border dark:border-slate-700 border-slate-200 dark:bg-slate-800 bg-white p-6 space-y-4">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -289,26 +291,26 @@ function ScriptDetail({ scriptId, onEdit, onClose }: ScriptDetailProps) {
               {script.language === "python" ? "Python" : "TypeScript"}
             </span>
           </div>
-          <p className="text-sm text-slate-400">{script.description || <em>No description</em>}</p>
+          <p className="text-sm dark:text-slate-400 text-slate-600">{script.description || <em>No description</em>}</p>
         </div>
         <div className="flex gap-2 shrink-0">
-          <button onClick={onEdit} className="rounded bg-slate-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-slate-500">Edit</button>
+          <button onClick={onEdit} className="rounded dark:bg-slate-600 bg-slate-200 px-3 py-1.5 text-xs font-medium dark:text-white text-slate-900 dark:hover:bg-slate-500 hover:bg-slate-300">Edit</button>
           <button onClick={handleDelete} className="rounded bg-red-900 px-3 py-1.5 text-xs font-medium text-red-300 hover:bg-red-800">Delete</button>
-          <button onClick={onClose} className="rounded bg-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-600">✕</button>
+          <button onClick={onClose} className="rounded dark:bg-slate-700 bg-slate-100 px-3 py-1.5 text-xs font-medium dark:text-slate-300 text-slate-700 dark:hover:bg-slate-600 hover:bg-slate-200">✕</button>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 text-sm">
-        <div><span className="text-slate-500">Version</span><p className="font-mono text-white">{script.current_version}</p></div>
-        <div><span className="text-slate-500">Timeout</span><p className="text-white">{script.max_timeout_seconds}s</p></div>
-        <div><span className="text-slate-500">Allowed hosts</span><p className="font-mono text-white break-all">{script.allowed_hosts || <em className="text-slate-500">none</em>}</p></div>
-        <div><span className="text-slate-500">Allowed env</span><p className="font-mono text-white break-all">{script.allowed_env || <em className="text-slate-500">none</em>}</p></div>
+        <div><span className="text-slate-500">Version</span><p className="font-mono dark:text-white text-slate-900">{script.current_version}</p></div>
+        <div><span className="text-slate-500">Timeout</span><p className="dark:text-white text-slate-900">{script.max_timeout_seconds}s</p></div>
+        <div><span className="text-slate-500">Allowed hosts</span><p className="font-mono dark:text-white text-slate-900 break-all">{script.allowed_hosts || <em className="text-slate-500">none</em>}</p></div>
+        <div><span className="text-slate-500">Allowed env</span><p className="font-mono dark:text-white text-slate-900 break-all">{script.allowed_env || <em className="text-slate-500">none</em>}</p></div>
       </div>
 
       {codeData?.code && (
         <div>
           <p className="text-xs text-slate-500 mb-1 uppercase tracking-wider">Source</p>
-          <pre className="rounded bg-slate-900 px-4 py-3 text-xs text-white font-mono overflow-auto max-h-80 whitespace-pre">{codeData.code}</pre>
+          <pre className="rounded dark:bg-slate-900 bg-slate-100 px-4 py-3 text-xs dark:text-white text-slate-900 font-mono overflow-auto max-h-80 whitespace-pre">{codeData.code}</pre>
         </div>
       )}
 
@@ -318,7 +320,7 @@ function ScriptDetail({ scriptId, onEdit, onClose }: ScriptDetailProps) {
           <div className="space-y-1">
             {[...script.versions].reverse().map((v) => (
               <div key={v.version} className="flex items-center gap-3 text-xs">
-                <span className="font-mono text-slate-300">{v.version}</span>
+                <span className="font-mono dark:text-slate-300 text-slate-700">{v.version}</span>
                 {v.promoted && <span className="rounded bg-cyan-900 px-1.5 py-0.5 text-cyan-300">promoted</span>}
                 <span className="text-slate-500">{new Date(v.created_at).toLocaleString()}</span>
               </div>
@@ -327,9 +329,9 @@ function ScriptDetail({ scriptId, onEdit, onClose }: ScriptDetailProps) {
         </div>
       )}
 
-      <div className="pt-2 border-t border-slate-700">
+      <div className="pt-2 border-t dark:border-slate-700 border-slate-200">
         <p className="text-xs text-slate-500 font-mono">
-          DSL usage: <span className="text-slate-300">script myStep {`{ name: "${script.name}" ... }`}</span>
+          DSL usage: <span className="dark:text-slate-300 text-slate-700">script myStep {`{ name: "${script.name}" ... }`}</span>
         </p>
       </div>
     </div>
@@ -348,7 +350,22 @@ export function ScriptsPage() {
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(0);
-  useEffect(() => { setPage(0); }, [search]);
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
+  const [isDeleting, setIsDeleting] = useState(false);
+  const qc = useQueryClient();
+  useEffect(() => { setPage(0); setCheckedIds(new Set()); }, [search]);
+
+  async function handleBulkDelete() {
+    if (!confirm(`Delete ${checkedIds.size} script${checkedIds.size > 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setIsDeleting(true);
+    try {
+      await Promise.all(Array.from(checkedIds).map((id) => api.scripts.delete(id)));
+      setCheckedIds(new Set());
+      qc.invalidateQueries({ queryKey: ["scripts"] });
+    } finally {
+      setIsDeleting(false);
+    }
+  }
 
   const { data: selectedScript } = useScript(selectedId ?? "");
 
@@ -358,6 +375,8 @@ export function ScriptsPage() {
   );
   const pageCount = Math.ceil(filtered.length / PAGE_SIZE);
   const scripts = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const allChecked = scripts.length > 0 && scripts.every((s) => checkedIds.has(s.id));
+  const someChecked = scripts.some((s) => checkedIds.has(s.id));
 
   if (isLoading) return <p className="text-slate-400">Loading scripts…</p>;
   if (error) return <p className="text-red-400">Error: {String(error)}</p>;
@@ -367,7 +386,7 @@ export function ScriptsPage() {
       <div className="flex items-center gap-4">
         <div className="shrink-0">
           <h1 className="text-2xl font-bold">Scripts</h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm dark:text-slate-400 text-slate-600 mt-1">
             TypeScript and Python scripts that run as sandboxed activities.
           </p>
         </div>
@@ -377,7 +396,7 @@ export function ScriptsPage() {
           value={searchDraft}
           onChange={(e) => setSearchDraft(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") setSearch(searchDraft); }}
-          className="flex-1 max-w-xs rounded bg-slate-700 px-3 py-2 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+          className="flex-1 max-w-xs rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500"
         />
         <button
           onClick={() => { setCreating(true); setSelectedId(null); setEditingId(null); }}
@@ -399,22 +418,56 @@ export function ScriptsPage() {
         />
       )}
 
+      {checkedIds.size > 0 && (
+        <div className="flex items-center gap-3 rounded-lg border dark:border-slate-700 border-slate-200 dark:bg-slate-800 bg-slate-50 px-4 py-2.5">
+          <span className="text-sm font-medium dark:text-slate-300 text-slate-700">{checkedIds.size} selected</span>
+          <button
+            onClick={handleBulkDelete}
+            disabled={isDeleting}
+            className="rounded bg-red-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-red-600 disabled:opacity-50"
+          >
+            {isDeleting ? "Deleting…" : "Delete selected"}
+          </button>
+          <button
+            onClick={() => setCheckedIds(new Set())}
+            className="ml-auto text-xs dark:text-slate-400 text-slate-600 hover:dark:text-white hover:text-slate-900"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-5">
         <div className={selectedId ? "lg:col-span-2" : "lg:col-span-5"}>
-          <div className="overflow-hidden rounded-lg border border-slate-700">
+          <div className="overflow-hidden rounded-lg border dark:border-slate-700 border-slate-200">
             <table className="w-full text-sm">
-              <thead className="bg-slate-800 text-slate-400 text-xs uppercase">
+              <thead className="dark:bg-slate-800 bg-white dark:text-slate-400 text-slate-600 text-xs uppercase">
                 <tr>
+                  <th className="w-10 pl-4 py-3">
+                    <input
+                      type="checkbox"
+                      ref={(el) => { if (el) el.indeterminate = someChecked && !allChecked; }}
+                      checked={allChecked}
+                      onChange={() => {
+                        if (allChecked) {
+                          setCheckedIds((prev) => { const n = new Set(prev); scripts.forEach((s) => n.delete(s.id)); return n; });
+                        } else {
+                          setCheckedIds((prev) => new Set([...prev, ...scripts.map((s) => s.id)]));
+                        }
+                      }}
+                      className="rounded border dark:border-slate-500 border-slate-300 dark:bg-slate-700 bg-white text-blue-500 focus:ring-blue-500 cursor-pointer h-4 w-4"
+                    />
+                  </th>
                   <th className="px-4 py-3 text-left">Name</th>
                   <th className="px-4 py-3 text-left">Description</th>
                   <th className="px-4 py-3 text-left">Lang</th>
                   <th className="px-4 py-3 text-left">Version</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-700 bg-slate-900">
+              <tbody className="divide-y dark:divide-slate-700 divide-slate-200 dark:bg-slate-900 bg-white">
                 {scripts.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={5} className="px-4 py-8 text-center text-slate-500">
                       No scripts yet. Create one to use in your workflow DSL.
                     </td>
                   </tr>
@@ -423,10 +476,18 @@ export function ScriptsPage() {
                   <tr
                     key={s.id}
                     onClick={() => { setSelectedId(s.id); setEditingId(null); setCreating(false); }}
-                    className={`cursor-pointer transition-colors ${selectedId === s.id ? "bg-slate-800" : "hover:bg-slate-800/60"}`}
+                    className={`cursor-pointer transition-colors ${selectedId === s.id ? "dark:bg-slate-800 bg-slate-50" : "dark:hover:bg-slate-800/60 hover:bg-slate-50"} ${checkedIds.has(s.id) ? "dark:bg-slate-800/60 bg-blue-50" : ""}`}
                   >
+                    <td className="w-10 pl-4" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={checkedIds.has(s.id)}
+                        onChange={() => setCheckedIds((prev) => { const n = new Set(prev); n.has(s.id) ? n.delete(s.id) : n.add(s.id); return n; })}
+                        className="rounded border dark:border-slate-500 border-slate-300 dark:bg-slate-700 bg-white text-blue-500 focus:ring-blue-500 cursor-pointer h-4 w-4"
+                      />
+                    </td>
                     <td className="px-4 py-3 font-mono text-cyan-400">{s.name}</td>
-                    <td className="px-4 py-3 text-slate-400 max-w-xs truncate">{s.description || "—"}</td>
+                    <td className="px-4 py-3 dark:text-slate-400 text-slate-600 max-w-xs truncate">{s.description || "—"}</td>
                     <td className="px-4 py-3">
                       <span className={`rounded px-1.5 py-0.5 text-xs font-medium ${
                         s.language === "python"
@@ -436,7 +497,7 @@ export function ScriptsPage() {
                         {s.language === "python" ? "Py" : "TS"}
                       </span>
                     </td>
-                    <td className="px-4 py-3 font-mono text-slate-300">{s.current_version}</td>
+                    <td className="px-4 py-3 font-mono dark:text-slate-300 text-slate-700">{s.current_version}</td>
                   </tr>
                 ))}
               </tbody>
