@@ -33,6 +33,17 @@ function getK8sApi(): k8s.CoreV1Api | null {
       });
     } else {
       kc.loadFromDefault();
+      // @kubernetes/client-node v1.x uses node-fetch internally. Bun replaces
+      // node-fetch with its own fetch, which ignores custom HTTPS agents — so
+      // the kubeconfig CA cert is never applied and every request fails TLS
+      // verification. When not in-cluster (KUBERNETES_SERVICE_HOST absent) we
+      // skip cert verification; kubeconfig credentials (token/cert) still
+      // authenticate the request.
+      if (!process.env["KUBERNETES_SERVICE_HOST"]) {
+        for (const entry of kc.clusters) {
+          entry.cluster.skipTLSVerify = true;
+        }
+      }
     }
     return kc.makeApiClient(k8s.CoreV1Api);
   } catch {
