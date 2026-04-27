@@ -35,7 +35,9 @@ function nextVersion(current: string): string {
 // POST /api/agents
 const ALLOWED_MODELS = new Set([
   "openai:gpt-4o", "openai:gpt-4o-mini", "openai:gpt-4-turbo",
-  "anthropic:claude-opus-4-6", "anthropic:claude-sonnet-4-6", "anthropic:claude-haiku-4-5",
+  "anthropic:claude-opus-4-7", "anthropic:claude-opus-4-6",
+  "anthropic:claude-sonnet-4-6",
+  "anthropic:claude-haiku-4-5", "anthropic:claude-haiku-4-5-20251001",
   "google:gemini-1.5-pro", "google:gemini-1.5-flash",
   "groq:llama-3.3-70b-versatile", "groq:llama-3.1-8b-instant", "groq:mixtral-8x7b-32768",
   "test",

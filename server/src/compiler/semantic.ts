@@ -19,6 +19,7 @@ import type {
 export type ScriptRegistry = Map<string, {
   version: string;
   s3Key: string;
+  language?: string;
   allowedHosts?: string;
   allowedEnv?: string;
   maxTimeoutSeconds?: number;

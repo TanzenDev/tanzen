@@ -724,6 +724,7 @@ class Parser {
           break;
         case "step":
         case "task":
+        case "script":
         case "parallel":
         case "gate":
         case "output":
@@ -731,7 +732,7 @@ class Parser {
           break;
         default:
           throw new ParseError(t.line, t.col,
-            `Unknown workflow field '${t.value}': expected version, triggers, params, step, task, parallel, gate, or output`);
+            `Unknown workflow field '${t.value}': expected version, triggers, params, step, task, script, parallel, gate, or output`);
       }
     }
 

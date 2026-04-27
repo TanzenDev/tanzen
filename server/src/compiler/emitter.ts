@@ -123,6 +123,7 @@ function emitScript(node: ScriptNode, registry: ScriptRegistry | undefined): IRS
     scriptName: node.scriptName,
     scriptVersion: node.scriptVersion ?? meta?.version ?? "unknown",
     s3Key: meta?.s3Key ?? "",
+    language: meta?.language ?? "typescript",
     ...(meta?.allowedHosts !== undefined && { allowedHosts: meta.allowedHosts }),
     ...(meta?.allowedEnv !== undefined && { allowedEnv: meta.allowedEnv }),
     ...(node.input !== undefined && { input: emitExpr(node.input) }),
