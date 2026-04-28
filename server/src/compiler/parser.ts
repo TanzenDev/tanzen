@@ -9,6 +9,7 @@ import type {
   ObjectExpr, ArrayExpr, IdentExpr, TemplateExpr,
   Trigger, ParamDecl, AgentRef,
   StepNode, ParallelNode, GateNode, OutputNode, TaskNode, ScriptNode, WorkflowItem, WorkflowNode,
+  AgentDeclNode, ScriptDeclNode, BundleNode,
 } from "./types.ts";
 
 export class ParseError extends Error {
@@ -737,12 +738,157 @@ class Parser {
     }
 
     this.eat("RBRACE");
-    this.eat("EOF");
-
     return { kind: "workflow", name, version, triggers, params, items, loc };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Top-level agent declaration
+  // ---------------------------------------------------------------------------
+  parseAgentDecl(): AgentDeclNode {
+    const loc = this.loc();
+    this.eat("IDENT", "agent");
+    const name = this.ident();
+    this.eat("LBRACE");
+
+    let model: string | undefined;
+    let systemPrompt: string | undefined;
+    const mcpServers: string[] = [];
+
+    while (!this.check("RBRACE")) {
+      const key = this.ident();
+      this.eat("COLON");
+      switch (key) {
+        case "model": {
+          model = this.eat("STRING").value;
+          break;
+        }
+        case "system_prompt": {
+          systemPrompt = this.eat("STRING").value;
+          break;
+        }
+        case "mcp": {
+          mcpServers.push(this.ident());
+          break;
+        }
+        default:
+          throw new ParseError(loc.line, loc.col,
+            `Unknown agent field '${key}': expected model, system_prompt, or mcp`);
+      }
+    }
+    this.eat("RBRACE");
+
+    if (!model) throw new ParseError(loc.line, loc.col, `Agent '${name}' is missing 'model'`);
+    if (systemPrompt === undefined) throw new ParseError(loc.line, loc.col, `Agent '${name}' is missing 'system_prompt'`);
+    return { kind: "agent_decl", name, model, systemPrompt, mcpServers, loc };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Top-level script declaration (distinct from in-workflow script step)
+  // ---------------------------------------------------------------------------
+  parseScriptDecl(): ScriptDeclNode {
+    const loc = this.loc();
+    this.eat("IDENT", "script");
+    const name = this.ident();
+    this.eat("LBRACE");
+
+    let language: "typescript" | "python" = "typescript";
+    let code: string | undefined;
+    let description: string | undefined;
+    let allowedHosts: string | undefined;
+    let allowedEnv: string | undefined;
+    let maxTimeoutSeconds: number | undefined;
+
+    while (!this.check("RBRACE")) {
+      const key = this.ident();
+      this.eat("COLON");
+      switch (key) {
+        case "language": {
+          const t = this.peek();
+          if (t.kind !== "IDENT" || (t.value !== "typescript" && t.value !== "python")) {
+            throw new ParseError(t.line, t.col, `language must be 'typescript' or 'python', got '${t.value}'`);
+          }
+          language = this.advance().value as "typescript" | "python";
+          break;
+        }
+        case "code": {
+          code = this.eat("STRING").value;
+          break;
+        }
+        case "description": {
+          description = this.eat("STRING").value;
+          break;
+        }
+        case "allowed_hosts": {
+          allowedHosts = this.eat("STRING").value;
+          break;
+        }
+        case "allowed_env": {
+          allowedEnv = this.eat("STRING").value;
+          break;
+        }
+        case "max_timeout_seconds": {
+          maxTimeoutSeconds = parseInt(this.eat("NUMBER").value, 10);
+          break;
+        }
+        default:
+          throw new ParseError(loc.line, loc.col,
+            `Unknown script field '${key}': expected language, code, description, allowed_hosts, allowed_env, or max_timeout_seconds`);
+      }
+    }
+    this.eat("RBRACE");
+
+    if (!code) throw new ParseError(loc.line, loc.col, `Script '${name}' is missing 'code'`);
+    return {
+      kind: "script_decl", name, language, code, loc,
+      ...(description !== undefined && { description }),
+      ...(allowedHosts !== undefined && { allowedHosts }),
+      ...(allowedEnv !== undefined && { allowedEnv }),
+      ...(maxTimeoutSeconds !== undefined && { maxTimeoutSeconds }),
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Bundle — top-level entry point accepting any mix of declarations
+  // ---------------------------------------------------------------------------
+  parseBundle(): BundleNode {
+    const loc = this.loc();
+    const agents: AgentDeclNode[] = [];
+    const scripts: ScriptDeclNode[] = [];
+    const workflows: WorkflowNode[] = [];
+
+    while (!this.check("EOF")) {
+      const t = this.peek();
+      if (t.kind !== "IDENT") {
+        throw new ParseError(t.line, t.col,
+          `Expected 'agent', 'script', or 'workflow' declaration but got '${t.value}'`);
+      }
+      switch (t.value) {
+        case "agent":    agents.push(this.parseAgentDecl()); break;
+        case "script":   scripts.push(this.parseScriptDecl()); break;
+        case "workflow": workflows.push(this.parseWorkflow()); break;
+        default:
+          throw new ParseError(t.line, t.col,
+            `Expected 'agent', 'script', or 'workflow' declaration but got '${t.value}'`);
+      }
+    }
+    this.eat("EOF");
+    return { kind: "bundle", agents, scripts, workflows, loc };
   }
 }
 
 export function parse(tokens: Token[]): WorkflowNode {
-  return new Parser(tokens).parseWorkflow();
+  const p = new Parser(tokens);
+  const workflow = p.parseWorkflow();
+  // Single-workflow mode still expects nothing after the closing brace
+  if (p["peek"]().kind !== "EOF") {
+    const t = p["peek"]();
+    throw new ParseError(t.line, t.col,
+      `Unexpected '${t.value}' after workflow. Use parseBundle() for multi-declaration files.`);
+  }
+  p["advance"](); // consume EOF
+  return workflow;
+}
+
+export function parseBundle(tokens: Token[]): BundleNode {
+  return new Parser(tokens).parseBundle();
 }

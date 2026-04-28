@@ -41,7 +41,7 @@ function getK8sApi(): k8s.CoreV1Api | null {
       // authenticate the request.
       if (!process.env["KUBERNETES_SERVICE_HOST"]) {
         for (const entry of kc.clusters) {
-          entry.skipTLSVerify = true;
+          Object.assign(entry, { skipTLSVerify: true });
         }
       }
     }

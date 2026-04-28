@@ -36,6 +36,9 @@ export const KEYWORDS = new Set([
   "workflow", "step", "task", "parallel", "gate", "output", "script",
   "params", "for", "in", "when", "manual", "webhook",
   "string", "number", "boolean",
+  // Bundle-level declaration keywords
+  "agent", "model", "system_prompt", "mcp",
+  "language", "code", "description", "allowed_hosts", "allowed_env", "max_timeout_seconds",
 ]);
 
 export class LexError extends Error {
@@ -98,7 +101,27 @@ export function lex(source: string): Token[] {
       continue;
     }
 
-    // String literal
+    // Triple-quoted string: """..."""  (multiline, for system_prompt and code)
+    if (peek() === '"' && peek(1) === '"' && peek(2) === '"') {
+      advance(); advance(); advance(); // consume opening """
+      let value = "";
+      while (pos < source.length) {
+        if (peek() === '"' && peek(1) === '"' && peek(2) === '"') {
+          advance(); advance(); advance(); // consume closing """
+          break;
+        }
+        if (pos >= source.length) throw new LexError(tokLine, tokCol, "Unterminated triple-quoted string");
+        value += advance();
+      }
+      // Strip a single leading newline (allows """ to appear on its own line)
+      if (value.startsWith("\n")) value = value.slice(1);
+      // Strip a single trailing newline + optional indentation before closing """
+      if (value.endsWith("\n")) value = value.slice(0, value.lastIndexOf("\n"));
+      tokens.push({ kind: "STRING", value, line: tokLine, col: tokCol });
+      continue;
+    }
+
+    // Single-quoted string literal
     if (peek() === '"') {
       advance(); // consume opening quote
       let value = "";

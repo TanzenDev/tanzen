@@ -31,7 +31,7 @@ async function buildServerWithPlugins(plugins: TanzenPlugin[]): Promise<{
     records[p.name] = { migrations: false, startup: false };
     if (p.migrations) {
       await p.migrations();
-      records[p.name].migrations = true;
+      records[p.name]!.migrations = true;
     }
   }
 
@@ -40,7 +40,7 @@ async function buildServerWithPlugins(plugins: TanzenPlugin[]): Promise<{
   for (const p of plugins) {
     if (p.onStartup) {
       await p.onStartup();
-      records[p.name].startup = true;
+      records[p.name]!.startup = true;
     }
     if (p.routes) {
       api.route(`/${p.name}`, p.routes);

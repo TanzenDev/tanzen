@@ -227,6 +227,40 @@ export interface WorkflowNode {
 }
 
 // ---------------------------------------------------------------------------
+// AST — Bundle-level declarations (agent, script)
+// ---------------------------------------------------------------------------
+
+export interface AgentDeclNode {
+  kind: "agent_decl";
+  name: string;           // kebab-case identifier, unique within the bundle
+  model: string;          // e.g. "anthropic:claude-sonnet-4-6"
+  systemPrompt: string;   // raw system prompt text (may be multi-line)
+  mcpServers: string[];   // MCP server names — resolved to URLs at deploy time
+  loc: Loc;
+}
+
+export interface ScriptDeclNode {
+  kind: "script_decl";
+  name: string;
+  language: "typescript" | "python";
+  code: string;
+  description?: string;
+  allowedHosts?: string;
+  allowedEnv?: string;
+  maxTimeoutSeconds?: number;
+  loc: Loc;
+}
+
+/** Root of a bundle parse — may contain any mix of declarations. */
+export interface BundleNode {
+  kind: "bundle";
+  agents: AgentDeclNode[];
+  scripts: ScriptDeclNode[];
+  workflows: WorkflowNode[];
+  loc: Loc;
+}
+
+// ---------------------------------------------------------------------------
 // JSON IR — emitted by the compiler, consumed by Temporal dynamic workflow
 // ---------------------------------------------------------------------------
 
@@ -282,6 +316,7 @@ export interface IRScriptStep {
   scriptName: string;
   scriptVersion: string;   // always concrete after compilation
   s3Key: string;           // content-addressable pointer baked in at compile time
+  language: string;        // "typescript" | "python"
   allowedHosts?: string;   // baked in from registry at compile time
   allowedEnv?: string;
   input?: IRValue;
@@ -306,8 +341,41 @@ export interface IR {
 }
 
 // ---------------------------------------------------------------------------
+// JSON IR — Bundle declarations (separate storage model)
+// ---------------------------------------------------------------------------
+
+/** Agent declaration in a bundle IR. MCP server URLs are resolved at deploy. */
+export interface IRAgentDecl {
+  name: string;
+  model: string;
+  systemPrompt: string;
+  mcpServers: string[];   // names, resolved to URLs by the deploy endpoint
+}
+
+/** Script declaration in a bundle IR. Code is embedded for portability. */
+export interface IRScriptDecl {
+  name: string;
+  language: "typescript" | "python";
+  code: string;
+  description?: string;
+  allowedHosts?: string;
+  allowedEnv?: string;
+  maxTimeoutSeconds?: number;
+}
+
+export interface BundleIR {
+  agents: IRAgentDecl[];
+  scripts: IRScriptDecl[];
+  workflows: IR[];
+}
+
+// ---------------------------------------------------------------------------
 // Compiler result
 // ---------------------------------------------------------------------------
 export type CompileResult =
   | { ok: true; ir: IR }
+  | { ok: false; errors: CompileError[] };
+
+export type BundleCompileResult =
+  | { ok: true; bundle: BundleIR }
   | { ok: false; errors: CompileError[] };

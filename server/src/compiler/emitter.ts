@@ -9,6 +9,8 @@ import type {
   Expr, RefExpr, StringExpr, BooleanExpr, ObjectExpr,
   IR, IRStep, IRAgentStep, IRParallelStep, IRGateStep, IRTaskStep, IRScriptStep, IROutput,
   IRValue, IRObject, IRRef,
+  AgentDeclNode, ScriptDeclNode, BundleNode,
+  IRAgentDecl, IRScriptDecl, BundleIR,
 } from "./types.ts";
 
 import type { ScriptRegistry } from "./semantic.ts";
@@ -172,6 +174,49 @@ function emitParams(params: WorkflowNode["params"]): IRObject | undefined {
     }
   }
   return obj;
+}
+
+// ---------------------------------------------------------------------------
+// Bundle-level emitters
+// ---------------------------------------------------------------------------
+
+function emitAgentDecl(node: AgentDeclNode): IRAgentDecl {
+  return {
+    name: node.name,
+    model: node.model,
+    systemPrompt: node.systemPrompt,
+    mcpServers: node.mcpServers,
+  };
+}
+
+function emitScriptDecl(node: ScriptDeclNode): IRScriptDecl {
+  const out: IRScriptDecl = { name: node.name, language: node.language, code: node.code };
+  if (node.description !== undefined)       out.description = node.description;
+  if (node.allowedHosts !== undefined)      out.allowedHosts = node.allowedHosts;
+  if (node.allowedEnv !== undefined)        out.allowedEnv = node.allowedEnv;
+  if (node.maxTimeoutSeconds !== undefined) out.maxTimeoutSeconds = node.maxTimeoutSeconds;
+  return out;
+}
+
+export function emitBundle(bundle: BundleNode, externalRegistry?: ScriptRegistry): BundleIR {
+  // Build a combined registry so locally-declared scripts resolve correctly
+  const combinedRegistry: ScriptRegistry = new Map(externalRegistry ?? []);
+  for (const s of bundle.scripts) {
+    combinedRegistry.set(s.name, {
+      version: "bundle",
+      s3Key: "",
+      language: s.language,
+      ...(s.allowedHosts !== undefined && { allowedHosts: s.allowedHosts }),
+      ...(s.allowedEnv !== undefined && { allowedEnv: s.allowedEnv }),
+      ...(s.maxTimeoutSeconds !== undefined && { maxTimeoutSeconds: s.maxTimeoutSeconds }),
+    });
+  }
+
+  return {
+    agents: bundle.agents.map(emitAgentDecl),
+    scripts: bundle.scripts.map(emitScriptDecl),
+    workflows: bundle.workflows.map(w => emit(w, combinedRegistry)),
+  };
 }
 
 // ---------------------------------------------------------------------------

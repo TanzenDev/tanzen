@@ -13,7 +13,7 @@
 
 import type {
   WorkflowNode, WorkflowItem, StepNode, ParallelNode, GateNode, TaskNode, ScriptNode,
-  RefExpr, CompileError,
+  RefExpr, CompileError, AgentDeclNode, ScriptDeclNode, BundleNode,
 } from "./types.ts";
 
 export type ScriptRegistry = Map<string, {
@@ -262,6 +262,87 @@ function validateGate(
     checkRef(gate.assignee, ids, paramNames, errors, `${ctx} 'assignee'`);
   }
   if (gate.input) validateExprRefs(gate.input, ids, paramNames, errors, `${ctx} 'input'`);
+}
+
+// ---------------------------------------------------------------------------
+// Bundle-level analysis
+// ---------------------------------------------------------------------------
+
+function analyzeAgentDecl(node: AgentDeclNode, errors: CompileError[]): void {
+  if (!node.model.includes(":")) {
+    errors.push(err(node.loc.line, node.loc.col,
+      `Agent '${node.name}': model must be in 'provider:name' format (e.g. "anthropic:claude-sonnet-4-6"), got '${node.model}'`));
+  }
+  if (!node.systemPrompt.trim()) {
+    errors.push(err(node.loc.line, node.loc.col, `Agent '${node.name}': system_prompt must not be empty`));
+  }
+}
+
+function analyzeScriptDecl(node: ScriptDeclNode, errors: CompileError[]): void {
+  if (!node.code.trim()) {
+    errors.push(err(node.loc.line, node.loc.col, `Script '${node.name}': code must not be empty`));
+  }
+  if (node.maxTimeoutSeconds !== undefined && node.maxTimeoutSeconds < 1) {
+    errors.push(err(node.loc.line, node.loc.col,
+      `Script '${node.name}': max_timeout_seconds must be ≥ 1`));
+  }
+}
+
+export function analyzeBundle(
+  bundle: BundleNode,
+  externalScriptRegistry?: ScriptRegistry,
+): CompileError[] {
+  const errors: CompileError[] = [];
+
+  // Check for duplicate agent names
+  const agentNames = new Set<string>();
+  for (const a of bundle.agents) {
+    if (agentNames.has(a.name)) {
+      errors.push(err(a.loc.line, a.loc.col, `Duplicate agent name '${a.name}'`));
+    }
+    agentNames.add(a.name);
+    analyzeAgentDecl(a, errors);
+  }
+
+  // Check for duplicate script names
+  const scriptNames = new Set<string>();
+  for (const s of bundle.scripts) {
+    if (scriptNames.has(s.name)) {
+      errors.push(err(s.loc.line, s.loc.col, `Duplicate script name '${s.name}'`));
+    }
+    scriptNames.add(s.name);
+    analyzeScriptDecl(s, errors);
+  }
+
+  // Check for duplicate workflow names
+  const workflowNames = new Set<string>();
+  for (const w of bundle.workflows) {
+    if (workflowNames.has(w.name)) {
+      errors.push(err(w.loc.line, w.loc.col, `Duplicate workflow name '${w.name}'`));
+    }
+    workflowNames.add(w.name);
+  }
+
+  // Build a combined script registry: local decls take precedence over external
+  const combinedRegistry: ScriptRegistry = new Map(externalScriptRegistry ?? []);
+  for (const s of bundle.scripts) {
+    combinedRegistry.set(s.name, {
+      version: "bundle",
+      s3Key: "",              // filled in by deploy endpoint after upload
+      language: s.language,
+      ...(s.allowedHosts !== undefined && { allowedHosts: s.allowedHosts }),
+      ...(s.allowedEnv !== undefined && { allowedEnv: s.allowedEnv }),
+      ...(s.maxTimeoutSeconds !== undefined && { maxTimeoutSeconds: s.maxTimeoutSeconds }),
+    });
+  }
+
+  // Validate each workflow using the combined registry
+  for (const w of bundle.workflows) {
+    const wErrors = analyze(w, combinedRegistry);
+    errors.push(...wErrors);
+  }
+
+  return errors;
 }
 
 import type { Expr } from "./types.ts";
