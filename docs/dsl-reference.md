@@ -2,40 +2,143 @@
 
 ## Introduction
 
-The Tanzen DSL is a TypeScript-like workflow definition language that lets domain experts
-describe multi-agent workflows without writing code. Source files are compiled by the
-Tanzen API server into a JSON Intermediate Representation (IR) that the Temporal dynamic
-workflow interpreter executes at runtime.
+The Tanzen DSL is a declarative language for describing agent workflows and the agents
+and scripts they depend on. A DSL file (`.tanzen`) can contain any combination of
+top-level `agent`, `script`, and `workflow` declarations — a **bundle** — making it
+fully self-contained and shareable across clusters.
 
 ### Compilation pipeline
 
 ```
 DSL source text
     │
-    ▼  Lexer (lexer.ts)
+    ▼  Lexer (lexer.ts)          triple-quoted strings, duration literals, …
 Token stream
     │
     ▼  Parser (parser.ts)
-WorkflowNode AST
+BundleNode AST                   agents[] + scripts[] + workflows[]
     │
     ▼  Semantic analyzer (semantic.ts)
 Validated AST  ──► CompileError[] (on failure)
     │
     ▼  Emitter (emitter.ts)
-JSON IR document  ──► Temporal DynamicWorkflow
+BundleIR                         { agents, scripts, workflows[] }
+    │
+    ▼  POST /api/bundles
+Deployed entities  ──► Temporal DynamicWorkflow (on run)
 ```
 
-The compiler runs in-process inside the Hono/Bun API server (Nearley-style recursive
-descent, written in TypeScript). Compilation happens on every `POST /api/workflows` and
-`POST /api/workflows/:id/compile` call.
+**Single-workflow mode** — the existing `POST /api/workflows` endpoint still accepts a
+file containing only a `workflow` block for backward compatibility.
+
+**Bundle mode** — `POST /api/bundles` accepts any mix of top-level declarations, upserts
+all entities, and returns a deploy summary. `GET /api/bundles/:workflowId` reconstructs
+the original `.tanzen` source from stored entities.
 
 ---
 
 ## Grammar Reference
 
+### File structure
+
+A `.tanzen` file is a sequence of zero or more top-level declarations in any order:
+
+```
+agent   <name> { … }
+script  <name> { … }
+workflow <Name> { … }
+```
+
+All three kinds may coexist in the same file. A file containing only `workflow` blocks
+is also valid and compiles the same as before.
+
+---
+
+### Top-level: `agent`
+
+Declares a named agent inline. On deploy the agent is created or updated in the agents
+table; its name becomes the identifier used in `step { agent: … }` references.
+
+```
+agent <name> {
+  model:         "<provider>:<model-name>"   // required
+  system_prompt: """
+    …multi-line prompt…
+  """                                        // required
+  mcp: <server-name>                         // optional, repeatable
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `model` | yes | Model identifier in `provider:name` format (e.g. `"anthropic:claude-sonnet-4-6"`). |
+| `system_prompt` | yes | Agent system prompt. Use triple-quoted strings for multi-line text. |
+| `mcp` | no | MCP server name to attach. Resolved to an in-cluster URL at deploy time. Repeat the field for multiple servers. |
+
+**Name:** kebab-case identifier, unique within the bundle and across the cluster.
+
+**`mcp` resolution:** at deploy time (`POST /api/bundles`) the server queries
+Kubernetes for Services labelled `tanzen/mcp=true` in the configured namespace and
+resolves each named MCP server to its in-cluster URL. If a server is not found, a
+placeholder URL is stored and can be updated later.
+
+---
+
+### Top-level: `script`
+
+Declares a named script inline. On deploy the script code is uploaded to S3 and the
+script is created or updated in the scripts table.
+
+```
+script <name> {
+  language:            typescript | python   // optional, default: typescript
+  description:         "<text>"              // optional
+  allowed_hosts:       "<glob>"              // optional
+  allowed_env:         "<VAR1,VAR2>"         // optional
+  max_timeout_seconds: <number>              // optional, default: 30
+  code: """
+    …script body…
+  """                                        // required
+}
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `language` | no | `typescript` or `python`. Default: `typescript`. |
+| `code` | yes | Script source. Use triple-quoted strings for multi-line code. |
+| `description` | no | Human-readable description shown in the UI. |
+| `allowed_hosts` | no | Comma-separated host glob for outbound network access. |
+| `allowed_env` | no | Comma-separated env var names the script may read. |
+| `max_timeout_seconds` | no | Maximum runtime in seconds. Default: 30. |
+
+See the [script step reference](#script) and [code-execution.md](./code-execution.md) for
+the sandbox security model.
+
+---
+
+### Triple-quoted strings
+
+Multi-line text (system prompts, script code) uses triple-quoted string syntax:
+
+```
+"""
+  content goes here
+  may span multiple lines
+"""
+```
+
+- Opening `"""` may appear on the same line as the field key or on the next line.
+- The first newline after the opening `"""` is stripped.
+- The last newline before the closing `"""` is stripped.
+- No escape processing is performed inside triple-quoted strings, except that a literal
+  `"""` sequence must be written as `\"\"\"`.
+
+---
+
 ### Top-level: `workflow`
 
-Every DSL file is a single workflow declaration.
+Every DSL file is a single workflow declaration in single-workflow mode, or one of
+several in bundle mode.
 
 ```
 workflow <Name> {
@@ -795,6 +898,109 @@ workflow ContractDueDiligence {
 
 ---
 
+### Example 6 — Bundle: inline agent and script declarations
+
+A self-contained bundle that defines an agent, a Python script, and a workflow that
+uses both. Drop this file into `tanzen bundle deploy` on any cluster.
+
+```
+agent clause-extractor {
+  model: "anthropic:claude-sonnet-4-6"
+  system_prompt: """
+    You are a contract analyst. Extract all obligation clauses and return
+    them as a JSON array of { party, obligation, deadline }.
+  """
+  mcp: fetch
+  mcp: sequential-thinking
+}
+
+script normalize-dates {
+  language: python
+  description: "Normalises ISO date strings found in extracted clauses"
+  code: """
+    import re
+    dates = re.findall(r'\b\d{4}-\d{2}-\d{2}\b', str(input))
+    output = {"dates": dates, "count": len(dates)}
+  """
+}
+
+workflow LegalReview {
+  version: "1.0.0"
+  triggers: [manual]
+
+  params {
+    document:  string
+    requester: string
+  }
+
+  step extract {
+    agent: clause-extractor @ "1.0"
+    input: { text: params.document }
+  }
+
+  script normalize {
+    name:  "normalize-dates"
+    input: extract.output
+  }
+
+  gate sign-off {
+    assignee: params.requester
+    timeout:  72h
+    input:    normalize.output
+  }
+
+  output {
+    artifact:  sign-off.notes
+    retention: "7y"
+  }
+}
+```
+
+**Deploy:**
+```bash
+tanzen bundle deploy legal-review.tanzen
+# Kind      Name              Version  Status
+# agent     clause-extractor  1.0.0    created
+# script    normalize-dates   1.0.0    created
+# workflow  legal-review      1.0.0    created
+```
+
+**Export from a running cluster:**
+```bash
+tanzen bundle export <workflow-id> --file legal-review.tanzen
+```
+
+**Bundle IR shape:**
+```json
+{
+  "agents": [
+    {
+      "name": "clause-extractor",
+      "model": "anthropic:claude-sonnet-4-6",
+      "systemPrompt": "You are a contract analyst…",
+      "mcpServers": ["fetch", "sequential-thinking"]
+    }
+  ],
+  "scripts": [
+    {
+      "name": "normalize-dates",
+      "language": "python",
+      "code": "import re\n…",
+      "description": "Normalises ISO date strings found in extracted clauses"
+    }
+  ],
+  "workflows": [
+    {
+      "name": "legal-review",
+      "version": "1.0.0",
+      "steps": [ … ]
+    }
+  ]
+}
+```
+
+---
+
 ## Error Message Reference
 
 Errors are returned as a JSON array of `CompileError` objects:
@@ -816,6 +1022,7 @@ Errors are returned as a JSON array of `CompileError` objects:
 |---------|-------|
 | `Unexpected character: '<ch>'` | Character not valid in DSL syntax |
 | `Unterminated string literal` | String opened with `"` but not closed before end of line or file |
+| `Unterminated triple-quoted string` | String opened with `"""` but no closing `"""` found |
 
 ### Parser errors
 
@@ -841,10 +1048,29 @@ Errors are returned as a JSON array of `CompileError` objects:
 | `Invalid retention value '<val>'` | Retention string doesn't match `Nd` or `Ny` format |
 | `Invalid duration '<val>'` | Duration token doesn't match `N[hmsd]` format |
 
+### Parser errors (bundle-specific)
+
+| Message | Cause |
+|---------|-------|
+| `Expected 'agent', 'script', or 'workflow' declaration but got '<X>'` | Unknown top-level keyword in bundle mode |
+| `Agent '<name>' is missing 'model'` | Agent block has no `model` field |
+| `Agent '<name>' is missing 'system_prompt'` | Agent block has no `system_prompt` field |
+| `Unknown agent field '<key>'` | Unrecognized key inside an agent block |
+| `Script '<name>' is missing 'code'` | Script block has no `code` field |
+| `language must be 'typescript' or 'python', got '<X>'` | Invalid language value |
+| `Unknown script field '<key>'` | Unrecognized key inside a script block |
+
 ### Semantic errors
 
 | Message | Cause |
 |---------|-------|
+| `Duplicate agent name '<name>'` | Two agent declarations share the same name |
+| `Duplicate script name '<name>'` | Two script declarations share the same name |
+| `Duplicate workflow name '<name>'` | Two workflow declarations share the same name |
+| `Agent '<name>': model must be in 'provider:name' format` | Model string missing the `:` separator |
+| `Agent '<name>': system_prompt must not be empty` | Empty system prompt |
+| `Script '<name>': code must not be empty` | Empty code block |
+| `Script '<name>': max_timeout_seconds must be ≥ 1` | Timeout too small |
 | `Duplicate ID '<id>': step, parallel, and gate IDs must be unique` | Two items share the same ID |
 | `<context>: references unknown step or variable '<name>'` | Reference root is not a declared step, gate, parallel, or param |
 | `<context>: param '<name>' is not declared in params block` | `params.<name>` reference but `<name>` not in the params block |

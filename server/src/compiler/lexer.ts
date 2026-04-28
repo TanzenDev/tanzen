@@ -115,8 +115,11 @@ export function lex(source: string): Token[] {
       }
       // Strip a single leading newline (allows """ to appear on its own line)
       if (value.startsWith("\n")) value = value.slice(1);
-      // Strip a single trailing newline + optional indentation before closing """
-      if (value.endsWith("\n")) value = value.slice(0, value.lastIndexOf("\n"));
+      // Strip trailing indentation before closing """ (the last line is whitespace-only)
+      const lastNl = value.lastIndexOf("\n");
+      if (lastNl !== -1 && value.slice(lastNl + 1).trim() === "") {
+        value = value.slice(0, lastNl);
+      }
       tokens.push({ kind: "STRING", value, line: tokLine, col: tokCol });
       continue;
     }

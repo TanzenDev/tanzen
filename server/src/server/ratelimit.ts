@@ -41,9 +41,9 @@ export function rateLimit(opts: RateLimitOptions = {}) {
   const message  = opts.message  ?? "Too many requests — please slow down";
 
   return async (c: Context, next: Next): Promise<Response | void> => {
-    // Bypass rate limiting for loopback requests (local dev / load tests).
+    // Bypass rate limiting for real loopback addresses (local dev / load tests).
     const ip = clientIp(c);
-    if (ip === "127.0.0.1" || ip === "::1" || ip === "unknown") {
+    if (ip === "127.0.0.1" || ip === "::1") {
       return next();
     }
 
