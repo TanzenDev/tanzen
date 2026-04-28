@@ -256,6 +256,7 @@ function WorkflowDetail({
   const agents = agentsData?.items ?? [];
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   const [tab, setTab] = useState<"dsl" | "visual">("dsl");
   const [dsl, setDsl] = useState<string | undefined>(undefined);
@@ -272,6 +273,7 @@ function WorkflowDetail({
 
   async function handleExportBundle() {
     setExporting(true);
+    setExportError(null);
     try {
       const text = await api.bundles.export(workflow.id);
       const blob = new Blob([text], { type: "text/plain" });
@@ -282,7 +284,7 @@ function WorkflowDetail({
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {
-      alert(String(e));
+      setExportError(String(e));
     } finally {
       setExporting(false);
     }
@@ -340,9 +342,14 @@ function WorkflowDetail({
           <button
             onClick={handleExportBundle}
             disabled={exporting}
-            className="rounded dark:bg-slate-600 bg-slate-200 px-3 py-1.5 text-xs font-medium dark:text-white text-slate-900 dark:hover:bg-slate-500 hover:bg-slate-300 disabled:opacity-50"
+            title={exportError ?? undefined}
+            className={`rounded px-3 py-1.5 text-xs font-medium disabled:opacity-50 ${
+              exportError
+                ? "bg-red-700 text-white hover:bg-red-600"
+                : "dark:bg-slate-600 bg-slate-200 dark:text-white text-slate-900 dark:hover:bg-slate-500 hover:bg-slate-300"
+            }`}
           >
-            {exporting ? "Exporting…" : "Export .tanzen"}
+            {exporting ? "Exporting…" : exportError ? "Export failed" : "Export"}
           </button>
           {confirmDelete ? (
             <>
