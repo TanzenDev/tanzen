@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import Editor from "@monaco-editor/react";
 import {
@@ -13,10 +13,170 @@ import {
   useAgents,
 } from "../api/hooks.js";
 import { api } from "../api/client.js";
-import type { Workflow } from "../api/client.js";
+import type { Workflow, BundleDeployResult } from "../api/client.js";
 import { WorkflowCanvas } from "../components/WorkflowCanvas.js";
 import type { CompileResult } from "../api/client.js";
 import { Paginator, PAGE_SIZE } from "../components/Paginator.js";
+
+function DeployBundleModal({ onClose }: { onClose: () => void }) {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dsl, setDsl] = useState("");
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [result, setResult] = useState<BundleDeployResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  function loadFile(file: File) {
+    setFileName(file.name);
+    const reader = new FileReader();
+    reader.onload = (e) => setDsl((e.target?.result as string) ?? "");
+    reader.readAsText(file);
+  }
+
+  async function handleDeploy() {
+    if (!dsl.trim()) { setError("No bundle content to deploy."); return; }
+    setDeploying(true);
+    setError(null);
+    try {
+      const r = await api.bundles.deploy(dsl);
+      setResult(r);
+      qc.invalidateQueries({ queryKey: ["workflows"] });
+      qc.invalidateQueries({ queryKey: ["agents"] });
+      qc.invalidateQueries({ queryKey: ["scripts"] });
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setDeploying(false);
+    }
+  }
+
+  const total = result ? result.agents.length + result.scripts.length + result.workflows.length : 0;
+
+  return (
+    <div className="fixed inset-0 flex items-center justify-center bg-black/60 z-50" onClick={onClose}>
+      <div
+        className="rounded-lg border dark:border-slate-700 border-slate-200 dark:bg-slate-800 bg-white p-6 w-full max-w-lg space-y-4"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-lg font-bold">Deploy bundle</h2>
+
+        {!result ? (
+          <>
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+              onDragLeave={() => setDragging(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragging(false);
+                const file = e.dataTransfer.files[0];
+                if (file) loadFile(file);
+              }}
+              onClick={() => fileRef.current?.click()}
+              className={`flex flex-col items-center justify-center gap-2 rounded-lg border-2 border-dashed px-6 py-8 cursor-pointer transition-colors ${
+                dragging
+                  ? "border-blue-400 dark:bg-slate-700 bg-blue-50"
+                  : "dark:border-slate-600 border-slate-300 dark:hover:border-slate-500 hover:border-slate-400"
+              }`}
+            >
+              <svg className="w-8 h-8 dark:text-slate-400 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
+                  d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <p className="text-sm dark:text-slate-300 text-slate-700">
+                {fileName ? (
+                  <span className="font-medium">{fileName}</span>
+                ) : (
+                  <>Drop a <span className="font-mono">.tanzen</span> file or click to browse</>
+                )}
+              </p>
+              {fileName && <p className="text-xs dark:text-slate-500 text-slate-400">{dsl.length.toLocaleString()} characters</p>}
+              <input
+                ref={fileRef}
+                type="file"
+                accept=".tanzen,.dsl,.txt"
+                className="hidden"
+                onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); }}
+              />
+            </div>
+
+            <p className="text-xs text-center dark:text-slate-500 text-slate-400">or paste DSL below</p>
+
+            <textarea
+              className="w-full rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-xs font-mono dark:text-white text-slate-900 dark:placeholder-slate-500 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+              rows={5}
+              placeholder={'agent my-agent {\n  model: "anthropic:claude-sonnet-4-6"\n  system_prompt: """..."""\n}'}
+              value={fileName ? "" : dsl}
+              onChange={(e) => { setDsl(e.target.value); setFileName(null); }}
+            />
+
+            {error && <p className="text-red-400 text-sm">{error}</p>}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleDeploy}
+                disabled={deploying || !dsl.trim()}
+                className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              >
+                {deploying ? "Deploying…" : "Deploy"}
+              </button>
+              <button
+                onClick={onClose}
+                className="rounded dark:bg-slate-600 bg-slate-200 px-4 py-2 text-sm font-medium dark:text-white text-slate-900 dark:hover:bg-slate-500 hover:bg-slate-300"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          /* Result summary */
+          <>
+            <div className="flex items-center gap-2">
+              <svg className="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <p className="text-sm font-medium dark:text-slate-200 text-slate-800">
+                Deployed {total} {total === 1 ? "entity" : "entities"}
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              {[
+                { kind: "Agent", items: result.agents },
+                { kind: "Script", items: result.scripts },
+                { kind: "Workflow", items: result.workflows },
+              ].map(({ kind, items }) =>
+                items.map((item) => (
+                  <div key={item.id} className="flex items-center gap-3 text-xs dark:text-slate-300 text-slate-700">
+                    <span className={`rounded px-1.5 py-0.5 font-medium ${
+                      kind === "Agent"    ? "dark:bg-blue-900 bg-blue-100 dark:text-blue-200 text-blue-800" :
+                      kind === "Script"   ? "dark:bg-violet-900 bg-violet-100 dark:text-violet-200 text-violet-800" :
+                                           "dark:bg-emerald-900 bg-emerald-100 dark:text-emerald-200 text-emerald-800"
+                    }`}>{kind}</span>
+                    <span className="font-medium">{item.name}</span>
+                    <span className="font-mono dark:text-slate-500 text-slate-400">v{item.version}</span>
+                    <span className={item.created ? "text-green-500" : "dark:text-slate-500 text-slate-400"}>
+                      {item.created ? "created" : "updated"}
+                    </span>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <button
+              onClick={onClose}
+              className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500"
+            >
+              Done
+            </button>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
 
 function RunModal({
   workflowId,
@@ -95,6 +255,7 @@ function WorkflowDetail({
   const { data: agentsData } = useAgents();
   const agents = agentsData?.items ?? [];
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const [tab, setTab] = useState<"dsl" | "visual">("dsl");
   const [dsl, setDsl] = useState<string | undefined>(undefined);
@@ -108,6 +269,24 @@ function WorkflowDetail({
   }
 
   const displayWorkflow = full ?? workflow;
+
+  async function handleExportBundle() {
+    setExporting(true);
+    try {
+      const text = await api.bundles.export(workflow.id);
+      const blob = new Blob([text], { type: "text/plain" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${displayWorkflow.name}.tanzen`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      alert(String(e));
+    } finally {
+      setExporting(false);
+    }
+  }
 
   function handleCompile() {
     if (!dsl) return;
@@ -157,6 +336,13 @@ function WorkflowDetail({
             className="rounded bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-500"
           >
             Promote
+          </button>
+          <button
+            onClick={handleExportBundle}
+            disabled={exporting}
+            className="rounded dark:bg-slate-600 bg-slate-200 px-3 py-1.5 text-xs font-medium dark:text-white text-slate-900 dark:hover:bg-slate-500 hover:bg-slate-300 disabled:opacity-50"
+          >
+            {exporting ? "Exporting…" : "Export .tanzen"}
           </button>
           {confirmDelete ? (
             <>
@@ -414,6 +600,7 @@ function CreateWorkflowForm({ onDone }: { onDone: () => void }) {
 export function WorkflowsPage() {
   const { data, isLoading, error } = useWorkflows();
   const [creating, setCreating] = useState(false);
+  const [deployingBundle, setDeployingBundle] = useState(false);
   const [selected, setSelected] = useState<Workflow | null>(null);
   const [searchDraft, setSearchDraft] = useState("");
   const [search, setSearch] = useState("");
@@ -460,12 +647,22 @@ export function WorkflowsPage() {
           className="flex-1 max-w-xs rounded dark:bg-slate-700 bg-slate-100 px-3 py-2 text-sm dark:text-white text-slate-900 dark:placeholder-slate-400 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
+          onClick={() => setDeployingBundle(true)}
+          className="rounded dark:bg-slate-700 bg-slate-100 px-4 py-2 text-sm font-medium dark:text-slate-200 text-slate-700 dark:hover:bg-slate-600 hover:bg-slate-200 shrink-0"
+        >
+          Deploy bundle
+        </button>
+        <button
           onClick={() => { setCreating(true); setSelected(null); }}
           className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 shrink-0"
         >
           + New workflow
         </button>
       </div>
+
+      {deployingBundle && (
+        <DeployBundleModal onClose={() => setDeployingBundle(false)} />
+      )}
 
       {creating && (
         <CreateWorkflowForm onDone={() => setCreating(false)} />

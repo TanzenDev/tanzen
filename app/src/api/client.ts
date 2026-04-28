@@ -19,6 +19,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   return res.json() as Promise<T>;
 }
 
+async function requestText(method: string, path: string, body?: unknown): Promise<string> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText })) as { error?: string };
+    throw new Error(err.error ?? res.statusText);
+  }
+  return res.text();
+}
+
 // ---------- Types ----------
 
 export interface Workflow {
@@ -158,6 +171,19 @@ export interface Settings {
   agent_code_execution_enabled: boolean;
 }
 
+export interface BundleEntityResult {
+  name: string;
+  id: string;
+  version: string;
+  created: boolean;
+}
+
+export interface BundleDeployResult {
+  agents: BundleEntityResult[];
+  scripts: BundleEntityResult[];
+  workflows: BundleEntityResult[];
+}
+
 export interface StepSnapshot {
   id: string;
   run_id: string;
@@ -256,6 +282,13 @@ export const api = {
     promote: (id: string) =>
       request<{ version: string }>("POST", `/scripts/${id}/promote`),
     delete: (id: string) => request("DELETE", `/scripts/${id}`),
+  },
+
+  bundles: {
+    deploy: (dsl: string) =>
+      request<BundleDeployResult>("POST", "/bundles", { dsl }),
+    export: (workflowId: string) =>
+      requestText("GET", `/bundles/${workflowId}`),
   },
 
   settings: {
