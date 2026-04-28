@@ -257,6 +257,7 @@ function WorkflowDetail({
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
   const [tab, setTab] = useState<"dsl" | "visual">("dsl");
   const [dsl, setDsl] = useState<string | undefined>(undefined);
@@ -324,7 +325,20 @@ function WorkflowDetail({
       <div className="flex items-start justify-between mb-4">
         <div>
           <h2 className="text-lg font-bold">{displayWorkflow.name}</h2>
-          <p className="text-sm dark:text-slate-400 text-slate-600">v{displayWorkflow.current_version}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <p className="text-sm dark:text-slate-400 text-slate-600">v{displayWorkflow.current_version}</p>
+            <button
+              onClick={() => {
+                navigator.clipboard.writeText(workflow.id);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 1500);
+              }}
+              title="Copy workflow ID"
+              className="font-mono text-xs dark:text-slate-500 text-slate-400 dark:hover:text-slate-300 hover:text-slate-600 transition-colors"
+            >
+              {copied ? "copied!" : workflow.id.slice(0, 8) + "…"}
+            </button>
+          </div>
         </div>
         <div className="flex gap-2">
           <button
