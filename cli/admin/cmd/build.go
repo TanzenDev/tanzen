@@ -30,7 +30,9 @@ func runBuild(_ *cobra.Command, _ []string) error {
 	image := fmt.Sprintf("tanzen-worker:%s", workerTag)
 
 	step("Building worker Docker image")
-	if err := runCmd("docker", "build", "-t", image, workerDir); err != nil {
+	// Use repo root as build context so infra/executor is accessible via COPY.
+	dockerfilePath := filepath.Join(workerDir, "Dockerfile")
+	if err := runCmd("docker", "build", "-t", image, "-f", dockerfilePath, root); err != nil {
 		return fmt.Errorf("docker build: %w", err)
 	}
 	success("Image built: " + image)
