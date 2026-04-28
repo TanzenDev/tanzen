@@ -501,6 +501,38 @@ func (c *Client) DeleteSecret(ctx context.Context, name string) error {
 	return err
 }
 
+// ── Bundles ───────────────────────────────────────────────────────────────────
+
+type BundleEntityResult struct {
+	Name    string `json:"name"`
+	ID      string `json:"id"`
+	Version string `json:"version"`
+	Created bool   `json:"created"`
+}
+
+type BundleDeployResult struct {
+	Agents    []BundleEntityResult `json:"agents"`
+	Scripts   []BundleEntityResult `json:"scripts"`
+	Workflows []BundleEntityResult `json:"workflows"`
+}
+
+func (c *Client) DeployBundle(ctx context.Context, dsl string) (BundleDeployResult, error) {
+	data, _, err := c.do(ctx, "POST", "/bundles", map[string]string{"dsl": dsl})
+	if err != nil {
+		return BundleDeployResult{}, err
+	}
+	return decode[BundleDeployResult](data)
+}
+
+// ExportBundle returns the raw .tanzen bundle DSL for the given workflow ID.
+func (c *Client) ExportBundle(ctx context.Context, workflowID string) (string, error) {
+	data, _, err := c.do(ctx, "GET", "/bundles/"+workflowID, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // ── MCP Servers ───────────────────────────────────────────────────────────────
 
 type MCPServer struct {
