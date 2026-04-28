@@ -60,9 +60,20 @@ spec:
             - port: "6379"
               protocol: TCP
 
-    # DNS (kube-dns — required for all service name resolution)
+    # PostgreSQL (CNPG — run status, step records, events, gate records)
     - toEndpoints:
         - matchLabels:
+            app.kubernetes.io/name: postgresql
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+
+    # DNS — allow UDP 53 to kube-dns with Cilium L7 DNS proxy rule so
+    # Cilium forwards the queries rather than intercepting and dropping them.
+    - toEndpoints:
+        - matchLabels:
+            "k8s:io.kubernetes.pod.namespace": kube-system
             k8s-app: kube-dns
       toPorts:
         - ports:
@@ -70,6 +81,9 @@ spec:
               protocol: UDP
             - port: "53"
               protocol: TCP
+          rules:
+            dns:
+              - matchPattern: "*"
 
 # tanzen-worker: deny all ingress except Prometheus scraping.
 ---

@@ -60,7 +60,7 @@ need() {
 # Prerequisites check
 # ---------------------------------------------------------------------------
 log "Checking prerequisites..."
-need kubectl helm openssl
+need kubectl helm openssl cilium
 if $NEW_CLUSTER; then need kind; fi
 log "Prerequisites OK."
 
@@ -68,6 +68,7 @@ log "Prerequisites OK."
 # Helm repo setup
 # ---------------------------------------------------------------------------
 log "Adding Helm repositories..."
+run helm repo add cilium      https://helm.cilium.io/                           --force-update
 run helm repo add cnpg        https://cloudnative-pg.github.io/charts          --force-update
 run helm repo add temporal    https://go.temporal.io/helm-charts                --force-update
 run helm repo add bitnami     https://charts.bitnami.com/bitnami                --force-update
@@ -89,6 +90,74 @@ if $NEW_CLUSTER; then
     log "Cluster created. Current context: $(kubectl config current-context)"
   fi
 fi
+
+# ---------------------------------------------------------------------------
+# Cilium CNI
+# ---------------------------------------------------------------------------
+log "Installing Cilium CNI..."
+API_SERVER_IP=$(kubectl get node "${CLUSTER_NAME}-control-plane" \
+  -o 'jsonpath={.status.addresses[?(@.type=="InternalIP")].address}')
+run helm upgrade --install cilium cilium/cilium \
+  --namespace kube-system \
+  --set kubeProxyReplacement=true \
+  --set socketLB.hostNamespaceOnly=true \
+  --set k8sServiceHost="${API_SERVER_IP}" \
+  --set k8sServicePort=6443 \
+  --set operator.replicas=1 \
+  --set l2announcements.enabled=true \
+  --set l2announcements.leaseDuration=3s \
+  --set l2announcements.renewDeadline=1s \
+  --set l2announcements.retryPeriod=200ms \
+  --set externalIPs.enabled=true \
+  --set hubble.relay.enabled=true \
+  --set hubble.ui.enabled=true \
+  --wait
+
+log "Waiting for Cilium to be ready..."
+run cilium status --wait --wait-duration 5m
+log "Cilium ready."
+
+# ---------------------------------------------------------------------------
+# Kata Containers
+# ---------------------------------------------------------------------------
+# kata-deploy ships as a Helm chart in GitHub releases; update KATA_VERSION when bumping.
+KATA_VERSION="3.29.0"
+KATA_CHART_URL="https://github.com/kata-containers/kata-containers/releases/download/${KATA_VERSION}/kata-deploy-${KATA_VERSION}.tgz"
+log "Installing Kata Containers (${KATA_VERSION})..."
+run helm upgrade --install kata-deploy "${KATA_CHART_URL}" \
+  --namespace kube-system \
+  --set k8sDistribution=k8s \
+  --set node-feature-discovery.enabled=false \
+  --wait \
+  || log "WARN: kata-deploy not ready (nested-virt may be unavailable on macOS Docker)"
+log "Kata RuntimeClasses installed."
+
+# ---------------------------------------------------------------------------
+# L2 Announcement resources
+# ---------------------------------------------------------------------------
+log "Applying L2 Announcement resources..."
+# 172.18.100.200/29 = 6 usable IPs within Kind's default Docker bridge (172.18.0.0/16)
+run kubectl apply -f - <<'EOF'
+---
+apiVersion: cilium.io/v2
+kind: CiliumLoadBalancerIPPool
+metadata:
+  name: kind-pool
+spec:
+  blocks:
+    - cidr: "172.18.100.200/29"
+---
+apiVersion: cilium.io/v2alpha1
+kind: CiliumL2AnnouncementPolicy
+metadata:
+  name: default
+spec:
+  loadBalancerIPs: true
+  externalIPs: true
+  interfaces:
+    - ^eth[0-9]+
+EOF
+log "L2 Announcement resources applied."
 
 # ---------------------------------------------------------------------------
 # Namespace

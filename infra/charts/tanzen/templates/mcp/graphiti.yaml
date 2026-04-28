@@ -1,0 +1,73 @@
+{{- if .Values.mcp.graphiti.enabled }}
+---
+# Graphiti temporal knowledge graph MCP server.
+# Connects to the existing FalkorDB deployment (mcp.falkordb must also be enabled).
+# Requires OPENAI_API_KEY (or compatible) secret for entity extraction.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mcp-graphiti
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-graphiti
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
+    tanzen/mcp: "true"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mcp-graphiti
+  template:
+    metadata:
+      labels:
+        app: mcp-graphiti
+        tanzen/mcp: "true"
+    spec:
+      containers:
+        - name: mcp-graphiti
+          image: "{{ .Values.mcp.graphiti.image }}"
+          imagePullPolicy: {{ .Values.global.imagePullPolicy }}
+          ports:
+            - containerPort: {{ .Values.mcp.graphiti.port }}
+          env:
+            - name: GROUP_ID
+              value: "{{ .Values.mcp.graphiti.groupId }}"
+            - name: DATABASE_PROVIDER
+              value: "falkordb"
+            - name: FALKORDB_URI
+              value: "redis://falkordb-db:{{ .Values.mcp.falkordb.dbPort }}"
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mcp.graphiti.openaiSecretName }}
+                  key: api-key
+            {{- if .Values.mcp.graphiti.modelName }}
+            - name: MODEL_NAME
+              value: "{{ .Values.mcp.graphiti.modelName }}"
+            {{- end }}
+          resources:
+            {{- toYaml .Values.mcp.graphiti.resources | nindent 12 }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mcp-graphiti
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/name: mcp-graphiti
+    app.kubernetes.io/part-of: tanzen
+    tanzen/mcp: "true"
+  annotations:
+    tanzen/mcp-name: "graphiti"
+    tanzen/mcp-description: "Temporal knowledge graph — entity extraction and graph search via Graphiti+FalkorDB"
+    tanzen/mcp-transport: "streamable-http"
+    tanzen/mcp-url: "http://mcp-graphiti:{{ .Values.mcp.graphiti.port }}/mcp"
+spec:
+  selector:
+    app: mcp-graphiti
+  ports:
+    - port: {{ .Values.mcp.graphiti.port }}
+      targetPort: {{ .Values.mcp.graphiti.port }}
+  type: ClusterIP
+{{- end }}
