@@ -1,0 +1,6 @@
+{
+  "nodeModulesDir": "auto",
+  "imports": {
+    "@langchain/pyodide-sandbox": "jsr:@langchain/pyodide-sandbox@^0.0.4"
+  }
+}

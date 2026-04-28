@@ -10,14 +10,15 @@
  * The `input` and `params` values are injected as Python globals before the
  * user code runs. The user code must assign to `output`.
  *
- * `capture_state` (M2 time-machine): if true, pickle-serializes the user
- * namespace and returns it as a base64 string in `state_b64`.
+ * `capture_state`: if true, pickle-serializes the user namespace and returns
+ * it as a base64 string in `state_b64` (time-machine checkpoints).
  *
  * Production compile (pre-loads Pyodide into a V8 startup snapshot):
- *   deno compile --no-remote --allow-read --allow-write=/tmp \
+ *   deno compile --allow-read --allow-write=/tmp --allow-env \
+ *     --allow-net=jsr.io,registry.npmjs.org \
  *     --output pyodide_runner pyodide_runner.ts
  */
-import { PyodideSandbox } from "jsr:@langchain/pyodide-sandbox";
+import { runPython } from "@langchain/pyodide-sandbox";
 
 const raw = await new Response(Deno.stdin.readable).text();
 const { code, input, params, capture_state } = JSON.parse(raw) as {
@@ -27,32 +28,26 @@ const { code, input, params, capture_state } = JSON.parse(raw) as {
   capture_state?: boolean;
 };
 
-const sandbox = await PyodideSandbox.create({ env: {} });
+// Inject input/params as Python globals via base64 to avoid quoting issues,
+// then run user code, then emit output as a JSON line on stdout.
+const inputJson = JSON.stringify(input ?? null);
+const paramsJson = JSON.stringify(params ?? {});
 
-// Inject `input` and `params` via base64 to avoid quoting/escaping issues.
-const inputB64 = btoa(unescape(encodeURIComponent(JSON.stringify(input ?? null))));
-const paramsB64 = btoa(unescape(encodeURIComponent(JSON.stringify(params ?? {}))));
-await sandbox.runCode(`
+const wrappedCode = `
 import base64 as _b64, json as _json
-input = _json.loads(_b64.b64decode("${inputB64}").decode())
-params = _json.loads(_b64.b64decode("${paramsB64}").decode())
+input = _json.loads(r"""${inputJson.replace(/\\/g, "\\\\").replace(/"""/g, "\\\"\\\"\\\"" )}""")
+params = _json.loads(r"""${paramsJson.replace(/\\/g, "\\\\").replace(/"""/g, "\\\"\\\"\\\"" )}""")
+output = None
 del _b64, _json
-`);
 
-// Run user code.
-await sandbox.runCode(code);
+${code}
 
-// Read the `output` variable the script must set.
-const outputResult = await sandbox.runCode(
-  `import json as _j; _j.dumps(output) if "output" in dir() else "null"`
-);
-const outputJson: string = (outputResult?.result ?? outputResult ?? "null") as string;
-const output = JSON.parse(outputJson);
+import json as _j_out
+print(_j_out.dumps(output))
+`;
 
-// M2: optionally serialize the Python namespace for time-machine checkpoints.
-let state_b64: string | null = null;
-if (capture_state) {
-  const stateResult = await sandbox.runCode(`
+const captureCode = capture_state
+  ? `
 import pickle as _p, base64 as _b64, json as _j
 _safe: dict = {}
 for _k, _v in dict(globals()).items():
@@ -64,13 +59,36 @@ for _k, _v in dict(globals()).items():
     except Exception:
         pass
 try:
-    _b64.b64encode(_p.dumps(_safe)).decode()
+    print(_b64.b64encode(_p.dumps(_safe)).decode())
 except Exception:
-    None
-`);
-  const raw_state = stateResult?.result ?? stateResult;
-  state_b64 = (typeof raw_state === "string" && raw_state !== "None") ? raw_state : null;
+    print("")
+`
+  : null;
+
+const result = await runPython(wrappedCode, { stateful: !!capture_state });
+
+if (!result.success) {
+  Deno.stderr.write(new TextEncoder().encode(result.error ?? "Python execution failed"));
+  Deno.exit(1);
 }
 
-await sandbox.destroy();
+// result.stdout is string[] — the last line is our JSON-serialized output.
+const stdoutLines = (result.stdout ?? []).filter((l) => l.trim() !== "");
+const outputLine = stdoutLines[stdoutLines.length - 1]?.trim() ?? "null";
+let output: unknown;
+try {
+  output = JSON.parse(outputLine);
+} catch {
+  Deno.stderr.write(new TextEncoder().encode(`output is not valid JSON: ${outputLine}`));
+  Deno.exit(1);
+}
+
+let state_b64: string | null = null;
+if (capture_state && captureCode) {
+  const stateResult = await runPython(captureCode, { stateful: false });
+  const stateLines = (stateResult.stdout ?? []).filter((l) => l.trim() !== "");
+  const stateLine = stateLines[stateLines.length - 1]?.trim() ?? "";
+  state_b64 = stateLine || null;
+}
+
 console.log(JSON.stringify({ output, state_b64 }));
