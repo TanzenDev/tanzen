@@ -212,6 +212,9 @@ Network access is disabled by default. To allow specific hosts, set `allowed_hos
 when registering the script. Internal Kubernetes service hostnames (postgres, redis,
 temporal, seaweedfs) cannot be whitelisted.
 
+See [code-execution.md](./code-execution.md) for the full security model,
+checkpoint/replay API, and feature flag reference.
+
 ---
 
 ### `gate`
@@ -394,6 +397,27 @@ The Temporal runtime resolves these against the run state at execution time.
   ]
 }
 ```
+
+### Script step IR
+
+```json
+{
+  "id": "normalize",
+  "type": "script",
+  "scriptName": "word-count",
+  "scriptVersion": "1.0",
+  "s3Key": "a3682b87-a878-4edb-97be-1ed574696a22/1.0.py",
+  "language": "python",
+  "allowedHosts": "",
+  "allowedEnv": "",
+  "timeoutSeconds": 30,
+  "input": { "$ref": "extract.output" }
+}
+```
+
+`language` is emitted from the script registry at compile time; the worker uses
+it to choose between `deno run <user-script>` (TypeScript) and
+`deno run pyodide_runner.ts` (Python).
 
 ### Gate step IR
 

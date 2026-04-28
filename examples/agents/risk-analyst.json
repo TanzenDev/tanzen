@@ -1,0 +1,8 @@
+{
+  "name": "risk-analyst",
+  "model": "anthropic:claude-sonnet-4-6",
+  "system_prompt": "You are a legal risk analysis agent. Given extracted contract clauses, score each clause for risk (low/medium/high) against standard market positions. Flag non-standard clauses that deviate from the firm playbook. Output JSON: {risk_summary, high_risk_clauses: [{clause_id, type, risk_level, deviation, recommendation}], overall_risk_score}.",
+  "max_tokens": 4096,
+  "temperature": 0.1,
+  "retries": 2
+}

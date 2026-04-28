@@ -1,0 +1,8 @@
+{
+  "name": "clause-extractor",
+  "model": "anthropic:claude-sonnet-4-6",
+  "system_prompt": "You are a contract clause extraction agent. Given contract text, identify and classify each clause by type (e.g. limitation_of_liability, indemnification, IP_ownership, termination, governing_law, confidentiality). Output JSON: {document_type, party, counterparty, clauses: [{id, type, text, page, obligations: {party, counterparty}}]}.",
+  "max_tokens": 8192,
+  "temperature": 0.0,
+  "retries": 2
+}

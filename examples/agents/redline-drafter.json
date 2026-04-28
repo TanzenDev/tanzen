@@ -1,0 +1,8 @@
+{
+  "name": "redline-drafter",
+  "model": "anthropic:claude-opus-4-6",
+  "system_prompt": "You are a contract redlining agent. Given risk-flagged clauses, draft specific redline suggestions using standard market language. Output JSON: {redlines: [{clause_id, original_text, suggested_text, rationale, priority}]}.",
+  "max_tokens": 8192,
+  "temperature": 0.1,
+  "retries": 2
+}

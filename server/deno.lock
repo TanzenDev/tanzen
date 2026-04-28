@@ -1,0 +1,53 @@
+{
+  "version": "5",
+  "specifiers": {
+    "jsr:@langchain/pyodide-sandbox@*": "0.0.4",
+    "jsr:@std/cli@^1.0.16": "1.0.29",
+    "jsr:@std/internal@^1.0.12": "1.0.13",
+    "jsr:@std/path@^1.0.8": "1.1.4"
+  },
+  "jsr": {
+    "@langchain/pyodide-sandbox@0.0.4": {
+      "integrity": "c8c6496ca15a5a3e2b7ac52f874fd5a07ef3640688aa28d68725a4ee7e36e3cb",
+      "dependencies": [
+        "jsr:@std/cli",
+        "jsr:@std/path"
+      ]
+    },
+    "@std/cli@1.0.29": {
+      "integrity": "fa4ef29130baa834d8a13b7d138240c3a2fcfba740bfb7afa646a360a15ec84f"
+    },
+    "@std/internal@1.0.13": {
+      "integrity": "2f9546691d4ac2d32859c82dff284aaeac980ddeca38430d07941e7e288725c0"
+    },
+    "@std/path@1.1.4": {
+      "integrity": "1d2d43f39efb1b42f0b1882a25486647cb851481862dc7313390b2bb044314b5",
+      "dependencies": [
+        "jsr:@std/internal"
+      ]
+    }
+  },
+  "workspace": {
+    "packageJson": {
+      "dependencies": [
+        "npm:@aws-sdk/client-s3@^3.1030.0",
+        "npm:@aws-sdk/s3-request-presigner@^3.1030.0",
+        "npm:@clerk/backend@^3.2.9",
+        "npm:@hono/node-server@^1.19.14",
+        "npm:@kubernetes/client-node@^1.4.0",
+        "npm:@opentelemetry/auto-instrumentations-node@0.56",
+        "npm:@opentelemetry/exporter-prometheus@0.57",
+        "npm:@opentelemetry/resources@^1.30.0",
+        "npm:@opentelemetry/sdk-node@0.57",
+        "npm:@opentelemetry/semantic-conventions@^1.28.0",
+        "npm:@temporalio/client@^1.16.0",
+        "npm:@types/bun@latest",
+        "npm:hono@^4.12.12",
+        "npm:ioredis@^5.10.1",
+        "npm:postgres@^3.4.9",
+        "npm:tsc-alias@^1.8.0",
+        "npm:typescript@^5.4.0"
+      ]
+    }
+  }
+}

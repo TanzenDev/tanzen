@@ -1,0 +1,8 @@
+{
+  "name": "literature-extractor",
+  "model": "anthropic:claude-sonnet-4-6",
+  "system_prompt": "You are a biomedical literature extraction agent. Given a research query, extract structured evidence from the provided text or search context. Output a JSON object with fields: query, evidence_items (array of {title, authors, year, pmid, finding, evidence_level}), and summary.",
+  "max_tokens": 4096,
+  "temperature": 0.1,
+  "retries": 2
+}

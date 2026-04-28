@@ -1,0 +1,61 @@
+---
+# k6-operator TestRun for distributed cluster-scale load testing.
+#
+# Prerequisites:
+#   helm repo add grafana https://grafana.github.io/helm-charts
+#   helm install k6-operator grafana/k6-operator -n k6-operator --create-namespace
+#
+# Deploy the script ConfigMap then apply this manifest:
+#   kubectl create configmap k6-baseline-script --from-file=baseline.js \
+#     -n tanzen-dev --dry-run=client -o yaml | kubectl apply -f -
+#   kubectl apply -f k6run.yaml
+#
+# Monitor progress:
+#   kubectl get testrun -n tanzen-dev
+#   kubectl logs -n tanzen-dev -l k6_cr=tanzen-baseline -f
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: tanzen-baseline
+  namespace: tanzen-dev
+spec:
+  parallelism: 4
+  script:
+    configMap:
+      name: k6-baseline-script
+      file: baseline.js
+  arguments: >-
+    -e BASE_URL=http://tanzen-api:3000
+    -e TOKEN=<jwt>
+---
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: tanzen-compile
+  namespace: tanzen-dev
+spec:
+  parallelism: 4
+  script:
+    configMap:
+      name: k6-compile-script
+      file: compile.js
+  arguments: >-
+    -e BASE_URL=http://tanzen-api:3000
+    -e TOKEN=<jwt>
+    -e WF_ID=<echo-wf-uuid>
+---
+apiVersion: k6.io/v1alpha1
+kind: TestRun
+metadata:
+  name: tanzen-run-burst
+  namespace: tanzen-dev
+spec:
+  parallelism: 4
+  script:
+    configMap:
+      name: k6-run-burst-script
+      file: run-burst.js
+  arguments: >-
+    -e BASE_URL=http://tanzen-api:3000
+    -e TOKEN=<jwt>
+    -e WF_ID=<echo-wf-uuid>

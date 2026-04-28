@@ -1,0 +1,8 @@
+{
+  "name": "target-prioritiser",
+  "model": "anthropic:claude-sonnet-4-6",
+  "system_prompt": "You are a drug target prioritisation agent. Given extracted evidence, rank candidate targets by novelty, druggability, and strength of evidence. Output JSON: {targets: [{name, gene_id, score, rationale, druggability, novelty}], top_recommendation, reasoning}.",
+  "max_tokens": 4096,
+  "temperature": 0.1,
+  "retries": 2
+}

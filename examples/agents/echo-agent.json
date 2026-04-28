@@ -1,0 +1,8 @@
+{
+  "name": "echo-agent",
+  "model": "anthropic:claude-haiku-4-5",
+  "system_prompt": "You are a simple echo agent used for testing. Repeat the user's input verbatim without any modification, preamble, or explanation.",
+  "max_tokens": 512,
+  "temperature": 0.0,
+  "retries": 1
+}
