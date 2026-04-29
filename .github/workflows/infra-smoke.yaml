@@ -80,7 +80,8 @@ jobs:
           ./infra/scripts/bootstrap.sh \
             --new-cluster \
             --cluster tanzen-ci \
-            --namespace tanzen-dev
+            --namespace tanzen-dev \
+            --no-monitoring
         env:
           TANZEN_NAMESPACE: tanzen-dev
 
@@ -105,6 +106,7 @@ jobs:
             --verbose
         env:
           TANZEN_NAMESPACE: tanzen-dev
+          SKIP_MONITORING: "true"
 
       # ------------------------------------------------------------------
       # 7. Collect diagnostics on failure

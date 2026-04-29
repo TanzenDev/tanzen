@@ -239,12 +239,16 @@ run_test ST-09 "KEDA: ScaledObject CRD is registered" bash -c "
 "
 
 # ---------------------------------------------------------------------------
-# ST-10: Grafana — health endpoint
+# ST-10: Grafana — health endpoint (skipped when SKIP_MONITORING=true)
 # ---------------------------------------------------------------------------
-run_test ST-10 "Grafana: /api/health returns 200" bash -c "
-  kubectl exec -n ${NAMESPACE} deploy/tanzen-grafana -c grafana -- \
-    wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q 'ok'
-"
+if [ "${SKIP_MONITORING:-false}" = "true" ]; then
+  echo "  [SKIP]  ST-10   Grafana: /api/health returns 200 (monitoring disabled)"
+else
+  run_test ST-10 "Grafana: /api/health returns 200" bash -c "
+    kubectl exec -n ${NAMESPACE} deploy/tanzen-grafana -c grafana -- \
+      wget -qO- http://localhost:3000/api/health 2>/dev/null | grep -q 'ok'
+  "
+fi
 
 # ---------------------------------------------------------------------------
 # Results summary

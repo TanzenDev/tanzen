@@ -12,6 +12,7 @@
 #   --namespace NS     Target namespace (default: tanzen-dev)
 #   --cluster NAME     Kind cluster name to create (default: use current context)
 #   --new-cluster      Create a new Kind cluster named by --cluster
+#   --no-monitoring    Skip kube-prometheus-stack/Grafana (faster CI installs)
 #   --dry-run          Print what would be done without executing
 #
 # Prerequisites (must be on PATH):
@@ -28,6 +29,7 @@ NAMESPACE="${TANZEN_NAMESPACE:-tanzen-dev}"
 CLUSTER_NAME="${TANZEN_CLUSTER:-tanzen-dev}"
 NEW_CLUSTER=false
 DRY_RUN=false
+NO_MONITORING=false
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 CHART_DIR="${REPO_ROOT}/infra/charts/tanzen"
@@ -37,10 +39,11 @@ CHART_DIR="${REPO_ROOT}/infra/charts/tanzen"
 # ---------------------------------------------------------------------------
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --namespace)   NAMESPACE="$2";    shift 2 ;;
-    --cluster)     CLUSTER_NAME="$2"; shift 2 ;;
-    --new-cluster) NEW_CLUSTER=true;  shift   ;;
-    --dry-run)     DRY_RUN=true;      shift   ;;
+    --namespace)      NAMESPACE="$2";    shift 2 ;;
+    --cluster)        CLUSTER_NAME="$2"; shift 2 ;;
+    --new-cluster)    NEW_CLUSTER=true;  shift   ;;
+    --no-monitoring)  NO_MONITORING=true; shift  ;;
+    --dry-run)        DRY_RUN=true;      shift   ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
 done
@@ -283,27 +286,31 @@ create_secret_if_missing seaweedfs-s3-credentials "${NAMESPACE}" \
   --from-literal=access_key="${SEAWEEDFS_ACCESS_KEY}" \
   --from-literal=secret_key="${SEAWEEDFS_SECRET_KEY}"
 
-create_secret_if_missing grafana-admin-credentials "${NAMESPACE}" \
-  --from-literal=admin-password="${GRAFANA_ADMIN_PASS}"
+if ! $NO_MONITORING; then
+  create_secret_if_missing grafana-admin-credentials "${NAMESPACE}" \
+    --from-literal=admin-password="${GRAFANA_ADMIN_PASS}"
+fi
 
 log "Secrets ready."
 
 # ---------------------------------------------------------------------------
 # Apply Grafana dashboard ConfigMap (namespace substitution)
 # ---------------------------------------------------------------------------
-log "Applying Grafana dashboard ConfigMap..."
-DASHBOARD_CM="${REPO_ROOT}/infra/deps/grafana/dashboards-configmap.yaml"
-if [ -f "${DASHBOARD_CM}" ]; then
-  run sed "s/{{ NAMESPACE }}/${NAMESPACE}/g" "${DASHBOARD_CM}" | \
-    kubectl apply -n "${NAMESPACE}" -f -
-  # Add Helm adoption labels so helm upgrade --install can own the ConfigMap
-  kubectl annotate configmap tanzen-grafana-dashboards -n "${NAMESPACE}" \
-    meta.helm.sh/release-name=tanzen \
-    meta.helm.sh/release-namespace="${NAMESPACE}" \
-    --overwrite &>/dev/null
-  kubectl label configmap tanzen-grafana-dashboards -n "${NAMESPACE}" \
-    app.kubernetes.io/managed-by=Helm \
-    --overwrite &>/dev/null
+if ! $NO_MONITORING; then
+  log "Applying Grafana dashboard ConfigMap..."
+  DASHBOARD_CM="${REPO_ROOT}/infra/deps/grafana/dashboards-configmap.yaml"
+  if [ -f "${DASHBOARD_CM}" ]; then
+    run sed "s/{{ NAMESPACE }}/${NAMESPACE}/g" "${DASHBOARD_CM}" | \
+      kubectl apply -n "${NAMESPACE}" -f -
+    # Add Helm adoption labels so helm upgrade --install can own the ConfigMap
+    kubectl annotate configmap tanzen-grafana-dashboards -n "${NAMESPACE}" \
+      meta.helm.sh/release-name=tanzen \
+      meta.helm.sh/release-namespace="${NAMESPACE}" \
+      --overwrite &>/dev/null
+    kubectl label configmap tanzen-grafana-dashboards -n "${NAMESPACE}" \
+      app.kubernetes.io/managed-by=Helm \
+      --overwrite &>/dev/null
+  fi
 fi
 
 # ---------------------------------------------------------------------------
@@ -313,11 +320,15 @@ log "Running helm dependency update..."
 run helm dependency update "${CHART_DIR}"
 
 log "Installing / upgrading Tanzen chart into namespace '${NAMESPACE}'..."
+MONITORING_SET=""
+$NO_MONITORING && MONITORING_SET="--set monitoring.enabled=false"
+# shellcheck disable=SC2086
 run helm upgrade --install tanzen "${CHART_DIR}" \
   --namespace "${NAMESPACE}" \
   --create-namespace \
   --values "${CHART_DIR}/values.yaml" \
   --set "global.namespace=${NAMESPACE}" \
+  ${MONITORING_SET} \
   --wait \
   --timeout 10m
 
