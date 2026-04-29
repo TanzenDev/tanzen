@@ -375,14 +375,14 @@ run kubectl wait --for=condition=ready pod \
 
 # Check if namespace already exists before registering
 if kubectl exec -n "${NAMESPACE}" \
-    deploy/temporal-admintools -- \
-    tctl --address temporal-frontend:7233 namespace describe default \
+    deploy/tanzen-temporal-admintools -- \
+    tctl --address tanzen-temporal-frontend:7233 namespace describe default \
     &>/dev/null 2>&1; then
   log "Temporal 'default' namespace already registered."
 else
   run kubectl exec -n "${NAMESPACE}" \
-    deploy/temporal-admintools -- \
-    tctl --address temporal-frontend:7233 namespace register default
+    deploy/tanzen-temporal-admintools -- \
+    tctl --address tanzen-temporal-frontend:7233 namespace register default
   log "Temporal 'default' namespace registered."
 fi
 
