@@ -359,7 +359,7 @@ run helm upgrade --install tanzen "${CHART_DIR}" \
   ${MONITORING_SET} \
   ${EXTRA_VALUES_FLAG} \
   --wait \
-  --timeout 10m
+  --timeout 20m
 
 log "Helm install complete."
 

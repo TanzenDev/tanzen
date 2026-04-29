@@ -25,6 +25,7 @@ import importlib
 import importlib.metadata
 import os
 
+from grpc import RpcError
 from temporalio.client import Client
 from temporalio.worker import Worker
 
@@ -89,11 +90,23 @@ def _load_extensions() -> tuple[list, list]:
     return extra_activities, extra_workflows
 
 
+async def _connect_with_retry(host: str, namespace: str, max_attempts: int = 20, delay: float = 5.0) -> Client:
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await Client.connect(host, namespace=namespace)
+        except (RpcError, Exception) as exc:
+            if attempt == max_attempts:
+                raise
+            print(f"Temporal not ready (attempt {attempt}/{max_attempts}): {exc}. Retrying in {delay}s…")
+            await asyncio.sleep(delay)
+    raise RuntimeError("unreachable")
+
+
 async def _run():
     init_worker_otel()
     init_worker_traces()
     extra_activities, extra_workflows = _load_extensions()
-    client = await Client.connect(TEMPORAL_HOST, namespace=TEMPORAL_NAMESPACE)
+    client = await _connect_with_retry(TEMPORAL_HOST, TEMPORAL_NAMESPACE)
     worker = Worker(
         client,
         task_queue=TASK_QUEUE,

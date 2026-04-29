@@ -179,10 +179,10 @@ jobs:
           echo "=== Events ==="
           kubectl get events -n tanzen-dev --sort-by='.lastTimestamp' | tail -40
           echo ""
-          echo "=== Failed pod logs ==="
+          echo "=== Failed / crashing pod logs ==="
           kubectl get pods -n tanzen-dev --no-headers | \
             awk '$3 != "Running" && $3 != "Completed" {print $1}' | \
-            xargs -I{} kubectl logs -n tanzen-dev {} --tail=50 2>/dev/null || true
+            xargs -I{} sh -c 'echo "--- {} ---"; kubectl logs -n tanzen-dev {} --tail=50 2>/dev/null; kubectl logs -n tanzen-dev {} --previous --tail=50 2>/dev/null || true'
 
       # ------------------------------------------------------------------
       # 11. Validate Helm chart templates
