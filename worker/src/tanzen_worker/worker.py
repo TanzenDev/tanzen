@@ -90,7 +90,7 @@ def _load_extensions() -> tuple[list, list]:
     return extra_activities, extra_workflows
 
 
-async def _connect_with_retry(host: str, namespace: str, max_attempts: int = 20, delay: float = 5.0) -> Client:
+async def _connect_with_retry(host: str, namespace: str, max_attempts: int = 60, delay: float = 5.0) -> Client:
     for attempt in range(1, max_attempts + 1):
         try:
             return await Client.connect(host, namespace=namespace)

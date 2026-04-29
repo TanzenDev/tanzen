@@ -139,7 +139,6 @@ jobs:
             --cluster tanzen-ci \
             --namespace tanzen-dev \
             --no-cilium \
-            --no-monitoring \
             --extra-values infra/charts/tanzen/values-ci.yaml
         env:
           TANZEN_NAMESPACE: tanzen-dev
@@ -165,7 +164,6 @@ jobs:
             --verbose
         env:
           TANZEN_NAMESPACE: tanzen-dev
-          SKIP_MONITORING: "true"
 
       # ------------------------------------------------------------------
       # 10. Collect diagnostics on failure
