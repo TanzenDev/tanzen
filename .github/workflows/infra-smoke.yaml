@@ -50,6 +50,16 @@ jobs:
         with:
           version: v3.15.0
 
+      - name: Install Cilium CLI
+        run: |
+          CILIUM_CLI_VERSION=$(curl -s https://raw.githubusercontent.com/cilium/cilium-cli/main/stable.txt)
+          GOOS=linux GOARCH=amd64
+          curl -sL --fail \
+            "https://github.com/cilium/cilium-cli/releases/download/${CILIUM_CLI_VERSION}/cilium-linux-amd64.tar.gz" \
+            -o /tmp/cilium.tar.gz
+          sudo tar xzf /tmp/cilium.tar.gz -C /usr/local/bin cilium
+          cilium version --client
+
       # ------------------------------------------------------------------
       # 3. Cache Helm charts (speeds up subsequent runs significantly)
       # ------------------------------------------------------------------
