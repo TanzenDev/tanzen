@@ -5,11 +5,15 @@ on:
     branches: [main, dev]
     paths:
       - 'infra/**'
+      - 'worker/**'
+      - 'mcp/**'
       - '.github/workflows/infra-smoke.yaml'
   pull_request:
     branches: [main]
     paths:
       - 'infra/**'
+      - 'worker/**'
+      - 'mcp/**'
       - '.github/workflows/infra-smoke.yaml'
 
 # Cancel in-progress runs for the same branch/PR
@@ -21,7 +25,7 @@ jobs:
   smoke-test:
     name: Deploy and Smoke Test
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       # ------------------------------------------------------------------
@@ -36,7 +40,6 @@ jobs:
       - name: Install kind
         uses: helm/kind-action@v1.10.0
         with:
-          # Don't create cluster yet — bootstrap.sh handles that
           install_only: true
           version: v0.23.0
 
@@ -51,7 +54,7 @@ jobs:
           version: v3.15.0
 
       # ------------------------------------------------------------------
-      # 3. Cache Helm charts (speeds up subsequent runs significantly)
+      # 3. Cache Helm charts
       # ------------------------------------------------------------------
       - name: Cache Helm repositories
         uses: actions/cache@v4
@@ -62,22 +65,87 @@ jobs:
             helm-repos-
 
       # ------------------------------------------------------------------
-      # 4. Bootstrap: create cluster + install operators + create secrets
+      # 4. Set up Docker Buildx with GHA layer cache
+      # ------------------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ------------------------------------------------------------------
+      # 5. Create Kind cluster (must exist before kind load)
+      # ------------------------------------------------------------------
+      - name: Create Kind cluster
+        run: |
+          kind create cluster \
+            --name tanzen-ci \
+            --config infra/scripts/kind-config-ci.yaml
+
+      # ------------------------------------------------------------------
+      # 6. Build app images and load into Kind
+      #    Worker needs repo-root build context (copies infra/executor/).
+      #    MCP servers build from their own subdirectory.
+      # ------------------------------------------------------------------
+      - name: Build and load tanzen-worker
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: worker/Dockerfile
+          tags: tanzen-worker:latest
+          load: true
+          cache-from: type=gha,scope=tanzen-worker
+          cache-to: type=gha,scope=tanzen-worker,mode=max
+
+      - name: Build and load mcp-fetch
+        uses: docker/build-push-action@v6
+        with:
+          context: mcp/fetch
+          tags: mcp-fetch:latest
+          load: true
+          cache-from: type=gha,scope=mcp-fetch
+          cache-to: type=gha,scope=mcp-fetch,mode=max
+
+      - name: Build and load mcp-sequential-thinking
+        uses: docker/build-push-action@v6
+        with:
+          context: mcp/sequential-thinking
+          tags: mcp-sequential-thinking:latest
+          load: true
+          cache-from: type=gha,scope=mcp-sequential-thinking
+          cache-to: type=gha,scope=mcp-sequential-thinking,mode=max
+
+      - name: Build and load mcp-falkordb
+        uses: docker/build-push-action@v6
+        with:
+          context: mcp/falkordb
+          tags: mcp-falkordb:latest
+          load: true
+          cache-from: type=gha,scope=mcp-falkordb
+          cache-to: type=gha,scope=mcp-falkordb,mode=max
+
+      - name: Load images into Kind
+        run: |
+          kind load docker-image tanzen-worker:latest          --name tanzen-ci
+          kind load docker-image mcp-fetch:latest              --name tanzen-ci
+          kind load docker-image mcp-sequential-thinking:latest --name tanzen-ci
+          kind load docker-image mcp-falkordb:latest           --name tanzen-ci
+
+      # ------------------------------------------------------------------
+      # 7. Bootstrap: install operators + secrets + Helm chart
+      #    Cluster already exists so bootstrap.sh skips kind create.
       # ------------------------------------------------------------------
       - name: Bootstrap cluster
         run: |
           chmod +x infra/scripts/bootstrap.sh
           ./infra/scripts/bootstrap.sh \
-            --new-cluster \
             --cluster tanzen-ci \
             --namespace tanzen-dev \
             --no-cilium \
-            --no-monitoring
+            --no-monitoring \
+            --extra-values infra/charts/tanzen/values-ci.yaml
         env:
           TANZEN_NAMESPACE: tanzen-dev
 
       # ------------------------------------------------------------------
-      # 5. Wait for all pods to be ready (belt-and-suspenders)
+      # 8. Wait for all pods to be ready (belt-and-suspenders)
       # ------------------------------------------------------------------
       - name: Wait for pods
         run: |
@@ -87,7 +155,7 @@ jobs:
         continue-on-error: true   # smoke-test.sh will surface any issues
 
       # ------------------------------------------------------------------
-      # 6. Run smoke tests
+      # 9. Run smoke tests
       # ------------------------------------------------------------------
       - name: Run smoke tests
         run: |
@@ -100,7 +168,7 @@ jobs:
           SKIP_MONITORING: "true"
 
       # ------------------------------------------------------------------
-      # 7. Collect diagnostics on failure
+      # 10. Collect diagnostics on failure
       # ------------------------------------------------------------------
       - name: Collect diagnostics (on failure)
         if: failure()
@@ -112,11 +180,12 @@ jobs:
           kubectl get events -n tanzen-dev --sort-by='.lastTimestamp' | tail -40
           echo ""
           echo "=== Failed pod logs ==="
-          kubectl get pods -n tanzen-dev --no-headers | awk '$3 != "Running" && $3 != "Completed" {print $1}' | \
+          kubectl get pods -n tanzen-dev --no-headers | \
+            awk '$3 != "Running" && $3 != "Completed" {print $1}' | \
             xargs -I{} kubectl logs -n tanzen-dev {} --tail=50 2>/dev/null || true
 
       # ------------------------------------------------------------------
-      # 8. Validate Helm chart templates (separate job step for clarity)
+      # 11. Validate Helm chart templates
       # ------------------------------------------------------------------
       - name: Helm lint
         if: always()
