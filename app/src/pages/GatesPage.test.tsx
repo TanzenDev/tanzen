@@ -20,13 +20,13 @@ const PENDING_GATE = {
   opened_at: "2024-01-01T00:00:00Z",
 };
 
-function setupMocks(gates: typeof PENDING_GATE[] = []) {
+function setupMocks(gates: Array<Omit<typeof PENDING_GATE, "status"> & { status: string }> = []) {
   const mutateFn = vi.fn();
   vi.mocked(hooks.useGates).mockReturnValue({
     data: { items: gates },
     isLoading: false,
     error: null,
-  } as ReturnType<typeof hooks.useGates>);
+  } as unknown as ReturnType<typeof hooks.useGates>);
   vi.mocked(hooks.useApproveGate).mockReturnValue({
     mutate: mutateFn,
   } as unknown as ReturnType<typeof hooks.useApproveGate>);
@@ -56,7 +56,7 @@ describe("GatesPage", () => {
       data: undefined,
       isLoading: true,
       error: null,
-    } as ReturnType<typeof hooks.useGates>);
+    } as unknown as ReturnType<typeof hooks.useGates>);
 
     renderWithProviders(<GatesPage />);
     expect(screen.getByText("Loading gates…")).toBeInTheDocument();

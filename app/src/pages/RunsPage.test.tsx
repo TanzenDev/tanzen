@@ -31,16 +31,16 @@ const SAMPLE_RUN = {
   completed_at: "2024-01-01T10:05:00Z",
 };
 
-function setupMocks(runs = [SAMPLE_RUN]) {
+function setupMocks(runs: { id: string; workflow_id: string; workflow_version: string; status: string; triggered_by: string; started_at: string; completed_at: string }[] = [SAMPLE_RUN]) {
   vi.mocked(hooks.useRuns).mockReturnValue({
     data: { items: runs },
     isLoading: false,
     error: null,
-  } as ReturnType<typeof hooks.useRuns>);
+  } as unknown as ReturnType<typeof hooks.useRuns>);
   vi.mocked(hooks.useRun).mockReturnValue({
     data: undefined,
     isLoading: false,
-  } as ReturnType<typeof hooks.useRun>);
+  } as unknown as ReturnType<typeof hooks.useRun>);
   vi.mocked(hooks.useDeleteRun).mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
@@ -68,7 +68,7 @@ describe("RunsPage", () => {
       data: undefined,
       isLoading: true,
       error: null,
-    } as ReturnType<typeof hooks.useRuns>);
+    } as unknown as ReturnType<typeof hooks.useRuns>);
 
     renderWithProviders(<RunsPage />);
     expect(screen.getByText("Loading runs…")).toBeInTheDocument();
@@ -111,7 +111,7 @@ describe("RunsPage", () => {
         events: [],
       },
       isLoading: false,
-    } as ReturnType<typeof hooks.useRun>);
+    } as unknown as ReturnType<typeof hooks.useRun>);
 
     renderWithProviders(<RunsPage />);
     // Open the detail panel

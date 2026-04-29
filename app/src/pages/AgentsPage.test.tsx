@@ -23,7 +23,7 @@ function mockHooks(overrides: Partial<typeof hooks> = {}) {
     data: { items: [] },
     isLoading: false,
     error: null,
-  } as ReturnType<typeof hooks.useAgents>);
+  } as unknown as ReturnType<typeof hooks.useAgents>);
   vi.mocked(hooks.useCreateAgent).mockReturnValue({
     mutate: mutateFn,
     isPending: false,
@@ -72,7 +72,7 @@ describe("AgentsPage", () => {
       },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof hooks.useAgents>);
+    } as unknown as ReturnType<typeof hooks.useAgents>);
 
     renderWithProviders(<AgentsPage />);
     expect(screen.getByText("doc-parser")).toBeInTheDocument();
@@ -84,7 +84,7 @@ describe("AgentsPage", () => {
       data: undefined,
       isLoading: true,
       error: null,
-    } as ReturnType<typeof hooks.useAgents>);
+    } as unknown as ReturnType<typeof hooks.useAgents>);
 
     renderWithProviders(<AgentsPage />);
     expect(screen.getByText("Loading agents…")).toBeInTheDocument();
@@ -95,7 +95,7 @@ describe("AgentsPage", () => {
       data: undefined,
       isLoading: false,
       error: new Error("Connection refused"),
-    } as ReturnType<typeof hooks.useAgents>);
+    } as unknown as ReturnType<typeof hooks.useAgents>);
 
     renderWithProviders(<AgentsPage />);
     expect(screen.getByText(/Error:/)).toBeInTheDocument();
@@ -152,7 +152,7 @@ describe("AgentsPage", () => {
       },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof hooks.useAgents>);
+    } as unknown as ReturnType<typeof hooks.useAgents>);
 
     renderWithProviders(<AgentsPage />);
     fireEvent.click(screen.getByText("doc-parser"));

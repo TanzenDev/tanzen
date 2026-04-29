@@ -80,6 +80,7 @@
     "@opentelemetry/resources": "^1.30.0",
     "@opentelemetry/sdk-node": "^0.57.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
+    "@scalar/hono-api-reference": "^0.10.12",
     "@temporalio/client": "^1.16.0",
     "hono": "^4.12.12",
     "ioredis": "^5.10.1",

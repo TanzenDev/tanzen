@@ -271,12 +271,12 @@ mcp:
         memory: 512Mi
 
   graphiti:
-    enabled: false              # enable when OPENAI_API_KEY secret is provisioned
+    enabled: false              # disabled: requires an OpenAI-compatible API key (OPENAI_API_KEY)
     image: mcp-graphiti:latest
     port: 8000
     groupId: tanzen             # logical namespace for the knowledge graph
-    openaiSecretName: graphiti-openai  # k8s Secret with key: api-key
-    modelName: "gpt-4o-mini"   # model used for entity extraction
+    llmSecretName: graphiti-llm # k8s Secret with key: api-key
+    modelName: "gpt-4o-mini"
     resources:
       requests:
         cpu: 100m

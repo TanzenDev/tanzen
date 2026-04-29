@@ -49,10 +49,10 @@ function setupMocks() {
     data: { items: [] },
     isLoading: false,
     error: null,
-  } as ReturnType<typeof hooks.useWorkflows>);
+  } as unknown as ReturnType<typeof hooks.useWorkflows>);
   vi.mocked(hooks.useWorkflow).mockReturnValue({
     data: undefined,
-  } as ReturnType<typeof hooks.useWorkflow>);
+  } as unknown as ReturnType<typeof hooks.useWorkflow>);
   vi.mocked(hooks.useCreateWorkflow).mockReturnValue({
     mutate: mutateFn,
     isPending: false,
@@ -75,12 +75,12 @@ function setupMocks() {
   } as unknown as ReturnType<typeof hooks.useDeleteWorkflow>);
   vi.mocked(hooks.useWorkflowDsl).mockReturnValue({
     data: undefined,
-  } as ReturnType<typeof hooks.useWorkflowDsl>);
+  } as unknown as ReturnType<typeof hooks.useWorkflowDsl>);
   vi.mocked(hooks.useAgents).mockReturnValue({
     data: { items: [] },
     isLoading: false,
     error: null,
-  } as ReturnType<typeof hooks.useAgents>);
+  } as unknown as ReturnType<typeof hooks.useAgents>);
   return mutateFn;
 }
 
@@ -100,7 +100,7 @@ describe("WorkflowsPage", () => {
       data: undefined,
       isLoading: true,
       error: null,
-    } as ReturnType<typeof hooks.useWorkflows>);
+    } as unknown as ReturnType<typeof hooks.useWorkflows>);
     renderWithProviders(<WorkflowsPage />);
     expect(screen.getByText("Loading workflows…")).toBeInTheDocument();
   });
@@ -110,7 +110,7 @@ describe("WorkflowsPage", () => {
       data: { items: [SAMPLE_WORKFLOW] },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof hooks.useWorkflows>);
+    } as unknown as ReturnType<typeof hooks.useWorkflows>);
 
     renderWithProviders(<WorkflowsPage />);
     expect(screen.getByText("data-pipeline")).toBeInTheDocument();
@@ -157,10 +157,10 @@ describe("WorkflowsPage", () => {
       data: { items: [SAMPLE_WORKFLOW] },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof hooks.useWorkflows>);
+    } as unknown as ReturnType<typeof hooks.useWorkflows>);
     vi.mocked(hooks.useWorkflow).mockReturnValue({
       data: SAMPLE_WORKFLOW,
-    } as ReturnType<typeof hooks.useWorkflow>);
+    } as unknown as ReturnType<typeof hooks.useWorkflow>);
 
     renderWithProviders(<WorkflowsPage />);
     fireEvent.click(screen.getByText("data-pipeline"));
@@ -174,7 +174,7 @@ describe("WorkflowsPage", () => {
       data: { items: [SAMPLE_WORKFLOW] },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof hooks.useWorkflows>);
+    } as unknown as ReturnType<typeof hooks.useWorkflows>);
 
     const compileMutate = vi.fn((_dsl, opts) => {
       opts?.onSuccess?.({ ok: true });
@@ -206,10 +206,10 @@ describe("WorkflowsPage", () => {
       data: { items: [wfWithPromo] },
       isLoading: false,
       error: null,
-    } as ReturnType<typeof hooks.useWorkflows>);
+    } as unknown as ReturnType<typeof hooks.useWorkflows>);
     vi.mocked(hooks.useWorkflow).mockReturnValue({
       data: wfWithPromo,
-    } as ReturnType<typeof hooks.useWorkflow>);
+    } as unknown as ReturnType<typeof hooks.useWorkflow>);
 
     renderWithProviders(<WorkflowsPage />);
     fireEvent.click(screen.getByText("data-pipeline"));

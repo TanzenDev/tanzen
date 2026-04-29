@@ -29,6 +29,8 @@ import { migrate } from "./db.js";
 import { ensureBuckets } from "./s3.js";
 import { rateLimit, userKey } from "./ratelimit.js";
 import { getPlugins } from "./plugins.js";
+import { Scalar } from "@scalar/hono-api-reference";
+import { openapiSpec } from "./openapi.js";
 
 export { registerPlugin, type TanzenPlugin } from "./plugins.js";
 
@@ -64,6 +66,10 @@ app.use("*", rateLimit({ windowMs: 60_000, max: RL_GLOBAL }));
 
 // Health check — no auth required
 app.get("/health", (c) => c.json({ ok: true, ts: new Date().toISOString() }));
+
+// OpenAPI spec + Scalar UI — public, no auth required
+app.get("/openapi.json", (c) => c.json(openapiSpec));
+app.get("/docs", Scalar({ url: "/openapi.json" }));
 
 // Prometheus metrics endpoint — no auth required (scraped by kube-prometheus)
 app.get("/metrics", async (c) => {

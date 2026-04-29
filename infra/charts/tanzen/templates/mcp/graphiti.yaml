@@ -2,7 +2,8 @@
 ---
 # Graphiti temporal knowledge graph MCP server.
 # Connects to the existing FalkorDB deployment (mcp.falkordb must also be enabled).
-# Requires OPENAI_API_KEY (or compatible) secret for entity extraction.
+# Requires an OpenAI API key (or compatible) for entity extraction.
+# Set mcp.graphiti.enabled=true and provision the secret named by llmSecretName.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -40,7 +41,7 @@ spec:
             - name: OPENAI_API_KEY
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.mcp.graphiti.openaiSecretName }}
+                  name: {{ .Values.mcp.graphiti.llmSecretName }}
                   key: api-key
             {{- if .Values.mcp.graphiti.modelName }}
             - name: MODEL_NAME

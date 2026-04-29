@@ -35,6 +35,12 @@ EXPOSE 8000
 #   OPENAI_API_KEY=<key>   required
 #   MODEL_NAME=gpt-4o-mini optional
 #
+# Note: Graphiti requires an OpenAI-compatible API key.
+# Native Google Gemini support is present in graphiti-core's config schema but
+# has bugs in the embedder (uses batchEmbedContents which Google's API doesn't
+# support for current embedding models). Enable Gemini when graphiti-core fixes
+# this upstream.
+#
 # ── Namespace ─────────────────────────────────────────────────────────────────
 #   GROUP_ID=tanzen
 
