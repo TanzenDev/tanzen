@@ -1,4 +1,5 @@
 import { NavLink, Outlet } from "react-router-dom";
+import type { ReactNode } from "react";
 import {
   Bot, GitBranch, Play, FileCode,
   ShieldCheck, BarChart2,
@@ -6,7 +7,7 @@ import {
   type LucideProps,
 } from "lucide-react";
 import { useGates } from "../api/hooks.js";
-import { useExtensionNavItems } from "../extensions/registry.js";
+import { useExtensionNavItems, useSlot } from "../extensions/registry.js";
 
 type IconComponent = React.ComponentType<LucideProps>;
 
@@ -39,6 +40,7 @@ export function Layout() {
   const { data: gatesData } = useGates();
   const pendingGates = gatesData?.items?.length ?? 0;
   const extNavItems = useExtensionNavItems();
+  const SidebarFooter = useSlot("sidebar.footer") as (() => ReactNode) | null;
 
   // Group extension nav items by section
   const extBySection = extNavItems.reduce<Record<string, typeof extNavItems>>((acc, item) => {
@@ -79,6 +81,11 @@ export function Layout() {
               {items.map((item) => <NavItem key={item.to} to={item.to} label={item.label} Icon={item.icon as IconComponent} />)}
             </div>
           ))}
+        {SidebarFooter && (
+          <div className="mt-auto pt-4 border-t border-[var(--shell-border)]">
+            <SidebarFooter />
+          </div>
+        )}
       </nav>
 
       {/* Main */}

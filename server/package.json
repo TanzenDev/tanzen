@@ -51,6 +51,11 @@
       "bun": "./src/server/s3.ts",
       "import": "./dist/server/s3.js",
       "types": "./dist/server/s3.d.ts"
+    },
+    "./src/server/plugins.js": {
+      "bun": "./src/server/plugins.ts",
+      "import": "./dist/server/plugins.js",
+      "types": "./dist/server/plugins.d.ts"
     }
   },
   "main": "./dist/server/index.js",

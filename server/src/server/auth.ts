@@ -30,6 +30,13 @@ export interface AuthProvider {
 const CLERK_SECRET_KEY = process.env["CLERK_SECRET_KEY"];
 const DEV_USER_ID = process.env["TANZEN_DEV_USER"] ?? "dev-user";
 
+if (!CLERK_SECRET_KEY && process.env["NODE_ENV"] === "production") {
+  throw new Error(
+    "CLERK_SECRET_KEY (or an enterprise auth provider) must be set in production. " +
+    "DevAuthProvider grants admin to all requests and must never run in production.",
+  );
+}
+
 let clerk: ReturnType<typeof createClerkClient> | null = null;
 
 function getClerk() {
@@ -54,7 +61,8 @@ class ClerkAuthProvider implements AuthProvider {
 
 class DevAuthProvider implements AuthProvider {
   async authenticate(_req: Request, _c: Context): Promise<AuthUser | null> {
-    return { userId: DEV_USER_ID, role: "admin" };
+    const role = process.env["TANZEN_DEV_ROLE"] ?? "admin";
+    return { userId: DEV_USER_ID, role };
   }
 }
 
@@ -65,6 +73,14 @@ class DevAuthProvider implements AuthProvider {
 let _provider: AuthProvider = CLERK_SECRET_KEY
   ? new ClerkAuthProvider()
   : new DevAuthProvider();
+
+if (!CLERK_SECRET_KEY && process.env["NODE_ENV"] !== "production") {
+  console.warn(
+    "[auth] DevAuthProvider active — all requests granted role:" +
+    ` "${process.env["TANZEN_DEV_ROLE"] ?? "admin"}". ` +
+    "Set CLERK_SECRET_KEY or call setAuthProvider() to enable real auth.",
+  );
+}
 
 /**
  * Override the default auth provider. Call this before the server starts.

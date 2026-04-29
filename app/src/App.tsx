@@ -9,26 +9,29 @@ import { SecretsPage } from "./pages/SecretsPage.js";
 import { ScriptsPage } from "./pages/ScriptsPage.js";
 import { SettingsPage } from "./pages/SettingsPage.js";
 import { ExtensionProvider, useExtensionRoutes } from "./extensions/registry.js";
+import { ProtectedRoute } from "./components/ProtectedRoute.js";
 
 function AppRoutes() {
   const extRoutes = useExtensionRoutes();
   return (
-    <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Navigate to="/agents" replace />} />
-        <Route path="/agents" element={<AgentsPage />} />
-        <Route path="/workflows" element={<WorkflowsPage />} />
-        <Route path="/runs" element={<RunsPage />} />
-        <Route path="/gates" element={<GatesPage />} />
-        <Route path="/metrics" element={<MetricsPage />} />
-        <Route path="/secrets" element={<SecretsPage />} />
-        <Route path="/scripts" element={<ScriptsPage />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        {extRoutes.map((r) => (
-          <Route key={r.path} path={r.path} element={r.element} />
-        ))}
-      </Route>
-    </Routes>
+    <ProtectedRoute>
+      <Routes>
+        <Route element={<Layout />}>
+          <Route index element={<Navigate to="/agents" replace />} />
+          <Route path="/agents" element={<AgentsPage />} />
+          <Route path="/workflows" element={<WorkflowsPage />} />
+          <Route path="/runs" element={<RunsPage />} />
+          <Route path="/gates" element={<GatesPage />} />
+          <Route path="/metrics" element={<MetricsPage />} />
+          <Route path="/secrets" element={<SecretsPage />} />
+          <Route path="/scripts" element={<ScriptsPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          {extRoutes.map((r) => (
+            <Route key={r.path} path={r.path} element={r.element} />
+          ))}
+        </Route>
+      </Routes>
+    </ProtectedRoute>
   );
 }
 

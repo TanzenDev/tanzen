@@ -13,6 +13,7 @@ initOtel();
 import { Hono } from "hono";
 import { logger } from "hono/logger";
 import { cors } from "hono/cors";
+import { secureHeaders } from "hono/secure-headers";
 import { authMiddleware } from "./auth.js";
 import { workflowRoutes } from "./routes/workflows.js";
 import { agentRoutes } from "./routes/agents.js";
@@ -27,34 +28,32 @@ import { bundleRoutes } from "./routes/bundles.js";
 import { migrate } from "./db.js";
 import { ensureBuckets } from "./s3.js";
 import { rateLimit, userKey } from "./ratelimit.js";
+import { getPlugins } from "./plugins.js";
 
-// ---------------------------------------------------------------------------
-// Plugin registry — commercial builds call registerPlugin() before startup
-// ---------------------------------------------------------------------------
-
-export interface TanzenPlugin {
-  name: string;
-  /** Mount additional routes on the /api sub-app */
-  routes?: Hono;
-  /** Run after migrate() and ensureBuckets() */
-  onStartup?: () => Promise<void>;
-  /** Additional DB migrations to run idempotently before core migrations */
-  migrations?: () => Promise<void>;
-}
-
-const _plugins: TanzenPlugin[] = [];
-
-export function registerPlugin(p: TanzenPlugin): void {
-  _plugins.push(p);
-}
+export { registerPlugin, type TanzenPlugin } from "./plugins.js";
 
 const app = new Hono();
 
+function resolveAllowedOrigins(): string | string[] {
+  if (process.env["ALLOWED_ORIGINS"]) {
+    return process.env["ALLOWED_ORIGINS"].split(",").map((o) => o.trim());
+  }
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(
+      "ALLOWED_ORIGINS must be set in production. " +
+      "Example: ALLOWED_ORIGINS=https://app.example.com",
+    );
+  }
+  return ["http://localhost:5173", "http://localhost:3000"];
+}
+
 // Global middleware
 app.use("*", logger());
+app.use("*", secureHeaders());
 app.use("*", cors({
-  origin: process.env["ALLOWED_ORIGINS"]?.split(",") ?? "*",
+  origin: resolveAllowedOrigins(),
   allowHeaders: ["Authorization", "Content-Type"],
+  maxAge: 600,
 }));
 
 // Global rate limit: 300 req/min per IP (covers unauthenticated endpoints too)
@@ -81,6 +80,12 @@ api.use("*", authMiddleware);
 // Per-user rate limit on mutating operations (60 req/min)
 api.use("*", rateLimit({ windowMs: 60_000, max: RL_API, keyFn: userKey }));
 
+// Plugin middleware registered here so Hono dispatches to them before route
+// handlers. Plugins are pre-registered via plugins.ts before this module runs.
+for (const p of getPlugins()) {
+  if (p.apiMiddleware) api.use("*", p.apiMiddleware);
+}
+
 api.route("/workflows", workflowRoutes);
 api.route("/agents",   agentRoutes);
 api.route("/runs",     runRoutes);
@@ -92,8 +97,6 @@ api.route("/scripts",  scriptRoutes);
 api.route("/settings", settingsRoutes);
 api.route("/bundles",  bundleRoutes);
 
-app.route("/api", api);
-
 // 404 fallback
 app.notFound((c) => c.json({ error: "Not found" }, 404));
 app.onError((err, c) => {
@@ -103,16 +106,23 @@ app.onError((err, c) => {
 
 const port = parseInt(process.env["PORT"] ?? "3000", 10);
 
-// Run plugin migrations, then core migrations, then startup hooks
-for (const p of _plugins) {
+// Run plugin migrations, then core migrations, then startup hooks.
+// Plugin routes are added to `api` before mounting on `app` so Hono's
+// route table includes them when app.route() copies the sub-app.
+for (const p of getPlugins()) {
   if (p.migrations) await p.migrations();
 }
 await migrate();
 await ensureBuckets();
-for (const p of _plugins) {
+for (const p of getPlugins()) {
   if (p.onStartup) await p.onStartup();
   if (p.routes) api.route(`/${p.name}`, p.routes);
+  if (p.publicRoutes) app.route(`/${p.name}`, p.publicRoutes);
 }
+
+// Mount api AFTER all plugin routes have been added.
+app.route("/api", api);
+
 console.log(`Tanzen API server listening on :${port}`);
 
 export default {
@@ -120,6 +130,7 @@ export default {
   fetch: app.fetch,
   // SSE connections are long-lived; disable Bun's 10s default idle timeout
   idleTimeout: 0,
+  maxRequestBodySize: 10 * 1024 * 1024, // 10 MB
 };
 
 export { app };
