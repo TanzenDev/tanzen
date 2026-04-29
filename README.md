@@ -1,6 +1,6 @@
 # Tanzen
 
-Agent Workflow Orchestration Platform for regulated knowledge-work automation.
+Agent Workflow Orchestration Platform for knowledge-work automation.
 
 ---
 
