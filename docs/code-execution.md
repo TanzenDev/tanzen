@@ -389,8 +389,8 @@ The commercial tier is the right place for:
 | **Time-machine UI** — visual step timeline with snapshot browser, side-by-side output diff, one-click replay in the workflow canvas | High engineering cost; strong enterprise appeal for post-incident review |
 | **Server-side replay** — re-running a step as a new Temporal activity from a saved checkpoint, with full state restore, wired into the run history | Requires careful Temporal workflow history management; niche use case that justifies paid tier |
 | **Managed Kata VM layer** — running each Deno subprocess inside a Kata microVM (hardware-isolated, separate kernel) for environments that need VM-level isolation | Infrastructure cost (Kata overhead ~100 ms/exec); only relevant for high-compliance deployments |
-| **Execution audit trail** — signed, append-only log of every script execution with content-addressed checkpoint hashes; exportable for compliance | Adds storage and signing infrastructure; typically required by regulated industries |
+| **Execution audit trail** — signed, append-only log of every script execution with content-addressed checkpoint hashes; exportable for compliance | Adds storage and signing infrastructure; typically required by critical industries |
 
 The line: OSS provides the sandbox and the data. Commercial provides the
 polished tooling on top of that data and the higher-assurance isolation options
-for regulated environments.
+for critical environments.

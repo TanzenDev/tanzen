@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What is Tanzen
 
-Agent Workflow Orchestration Platform for regulated knowledge-work automation. Multi-component monorepo with an open-core architecture: an OSS core designed to be extended by commercial builds without forking.
+Agent Workflow Orchestration Platform for critical knowledge-work automation. Multi-component monorepo with an open-core architecture: an OSS core designed to be extended by commercial builds without forking.
 
 ## Repository layout
 

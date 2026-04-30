@@ -2,7 +2,7 @@
 
 ## Objective
 
-Enable scientists, lawyers, and clinicians to author, execute, and audit multi-agent workflows over regulated data, reducing the cost of procedurally defensible knowledge-work automation by O(n) labor-hours per workflow class while delivering an auditable artifact chain satisfying compliance requirements for FDA, GxP, and legal privilege contexts.
+Enable scientists, lawyers, and clinicians to author, execute, and audit multi-agent workflows over critical data, reducing the cost of procedurally defensible knowledge-work automation by O(n) labor-hours per workflow class while delivering an auditable artifact chain satisfying compliance requirements for FDA, GxP, and legal privilege contexts.
 
 ---
 
@@ -10,7 +10,7 @@ Enable scientists, lawyers, and clinicians to author, execute, and audit multi-a
 
 ### State of the market
 
-Large language models have crossed a capability threshold where multi-step agentic pipelines are viable for knowledge-intensive professional work. The tooling landscape has bifurcated: on one side, low-code builders (n8n, Relevance AI, Zapier) that are accessible but produce opaque, unauditable automations unsuitable for regulated industries; on the other, SDK-level frameworks (LangGraph, CrewAI, AutoGen) that require developer expertise and offer no operational infrastructure.
+Large language models have crossed a capability threshold where multi-step agentic pipelines are viable for knowledge-intensive professional work. The tooling landscape has bifurcated: on one side, low-code builders (n8n, Relevance AI, Zapier) that are accessible but produce opaque, unauditable automations unsuitable for critical industries; on the other, SDK-level frameworks (LangGraph, CrewAI, AutoGen) that require developer expertise and offer no operational infrastructure.
 
 
 
@@ -18,7 +18,7 @@ Neither serves the legal operations director, the pharmacovigilance scientist, o
 
 
 
-Parallel to this, workflow orchestration has matured. Temporal has emerged as the de facto standard for durable execution semantics in production systems, offering event-sourced workflow history, saga compensation, and durable human-in-the-loop gates — properties that are not incidental but architecturally necessary for regulated use cases.
+Parallel to this, workflow orchestration has matured. Temporal has emerged as the de facto standard for durable execution semantics in production systems, offering event-sourced workflow history, saga compensation, and durable human-in-the-loop gates — properties that are not incidental but architecturally necessary for critical use cases.
 
 
 
@@ -61,7 +61,7 @@ Organizations that do not automate these workflows face compounding competitive 
 
 **Legal operations analyst** — works in-house at an enterprise or within a law firm's legal ops function. Technically literate but not a developer. Needs to build and run workflows that produce artifacts demonstrable as procedurally correct to outside counsel and courts.
 
-**Pharmacovigilance scientist** — works in a regulated pharmaceutical or CRO environment. Understands data pipelines; may write SQL or Python. Primary concern is regulatory defensibility of outputs and reproducibility of runs.
+**Pharmacovigilance scientist** — works in a critical pharmaceutical or CRO environment. Understands data pipelines; may write SQL or Python. Primary concern is regulatory defensibility of outputs and reproducibility of runs.
 
 **Clinical research coordinator / bioinformatician** — manages data curation and cohort assembly for trials or research programs. Needs controlled vocabulary enforcement, provenance tracking across datasets, and reproducibility for publication.
 
@@ -282,7 +282,7 @@ DELETE /api/secrets/:name               Delete K8s secret
 | ----------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
 | `workflows` | DSL source (versioned by object key `{id}/{version}.dsl`) and compiled IR (`{id}/{version}.ir.json`) | Indefinite                                                          |
 | `agents`    | Agent definition JSON (`{id}/{version}.json`)                                                        | Indefinite                                                          |
-| `artifacts` | Run input and output artifacts (`{runId}/{stepId}/{direction}/{filename}`)                           | Configurable per workflow (default 7 years for regulated verticals) |
+| `artifacts` | Run input and output artifacts (`{runId}/{stepId}/{direction}/{filename}`)                           | Configurable per workflow (default 7 years for critical verticals) |
 
 **Postgres** (in-cluster, managed by CloudNativePG operator):
 
@@ -518,7 +518,7 @@ class DynamicWorkflow:
 | Saga / compensation    | Supported natively                                          | Not supported                                                                          |
 | Autoscaling            | KEDA on Temporal task queue depth                           | KEDA on Argo queue depth or Kubernetes HPA                                             |
 | Operational complexity | Temporal server deployment (Helm); Postgres dependency      | Argo controller only; no separate persistence layer                                    |
-| **Verdict**            | **Correct for this domain**                                 | Appropriate for bounded batch pipelines; not for regulated human-in-the-loop workflows |
+| **Verdict**            | **Correct for this domain**                                 | Appropriate for bounded batch pipelines; not for critical human-in-the-loop workflows |
 
 ### DSL format: TypeScript-like DSL vs YAML vs Python DSL
 
