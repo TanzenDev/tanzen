@@ -10,6 +10,15 @@ networkPolicies:
   enabled: false   # set to true on talos cluster; kind cluster doesn't have Cilium labels
 
 # ---------------------------------------------------------------------------
+# Observability service exposure (Talos / Cilium L2 only)
+# Creates LoadBalancer services for Temporal Web UI, Hubble UI, and Grafana.
+# Disabled by default — use kubectl port-forward on Kind.
+# ---------------------------------------------------------------------------
+observability:
+  expose:
+    enabled: false
+
+# ---------------------------------------------------------------------------
 # Global settings
 # ---------------------------------------------------------------------------
 global:

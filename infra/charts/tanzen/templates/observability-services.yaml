@@ -1,0 +1,56 @@
+{{- if ((.Values.observability).expose).enabled }}
+# Expose observability tools via Cilium L2 LoadBalancer (Talos clusters).
+# On Kind, use kubectl port-forward instead.
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tanzen-temporal-web-lb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/component: observability
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/component: web
+    app.kubernetes.io/instance: tanzen-temporal
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tanzen-hubble-ui-lb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/component: observability
+spec:
+  type: LoadBalancer
+  selector:
+    k8s-app: hubble-ui
+  ports:
+    - name: http
+      port: 80
+      targetPort: 8081
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tanzen-grafana-lb
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    app.kubernetes.io/part-of: tanzen
+    app.kubernetes.io/component: observability
+spec:
+  type: LoadBalancer
+  selector:
+    app.kubernetes.io/name: grafana
+  ports:
+    - name: http
+      port: 80
+      targetPort: 3000
+{{- end }}
