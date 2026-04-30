@@ -1,0 +1,11 @@
+# Overrides for Talos/KVM clusters.
+# Temporal's built-in schema jobs use direct exec which exits 1 on Talos
+# (PID-1 exec behavior). Use the custom sh -c wrapper job instead.
+temporal:
+  customSchemaJob:
+    enabled: true
+  schema:
+    setup:
+      enabled: false
+    update:
+      enabled: false

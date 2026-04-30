@@ -100,6 +100,9 @@ make install      # build + install to /usr/local/bin
 # Existing cluster
 ./infra/scripts/bootstrap.sh --namespace tanzen-dev
 
+# Talos/KVM cluster (uses custom schema job, disables sub-chart schema jobs)
+./infra/scripts/bootstrap.sh --namespace tanzen-dev --talos
+
 # Health check
 ./infra/scripts/smoke-test.sh --namespace tanzen-dev
 

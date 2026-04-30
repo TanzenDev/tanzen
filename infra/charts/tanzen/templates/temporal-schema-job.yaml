@@ -1,4 +1,4 @@
-{{- if .Values.postgres.enabled }}
+{{- if and .Values.postgres.enabled ((.Values.temporal).customSchemaJob).enabled }}
 # Custom Temporal schema job that uses sh -c wrapper.
 # The Temporal chart's built-in schema job uses direct exec which causes
 # temporal-sql-tool to exit 1 on Talos/KVM workers (PID-1 exec behavior).

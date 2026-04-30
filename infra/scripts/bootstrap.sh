@@ -15,6 +15,8 @@
 #   --no-cilium        Use kindnet CNI instead of Cilium (for CI environments)
 #   --no-monitoring    Skip kube-prometheus-stack/Grafana (faster CI installs)
 #   --extra-values F   Additional Helm values file passed to tanzen chart install
+#   --talos            Apply Talos-specific overrides (values-talos.yaml) — uses
+#                      custom schema job instead of Temporal sub-chart schema jobs
 #   --dry-run          Print what would be done without executing
 #
 # Prerequisites (must be on PATH):
@@ -33,6 +35,7 @@ NEW_CLUSTER=false
 DRY_RUN=false
 NO_MONITORING=false
 NO_CILIUM=false
+TALOS=false
 EXTRA_VALUES=""
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
@@ -49,6 +52,7 @@ while [[ $# -gt 0 ]]; do
     --no-cilium)      NO_CILIUM=true;     shift   ;;
     --no-monitoring)  NO_MONITORING=true; shift   ;;
     --extra-values)   EXTRA_VALUES="$2"; shift 2  ;;
+    --talos)          TALOS=true;         shift   ;;
     --dry-run)        DRY_RUN=true;       shift   ;;
     *) echo "Unknown option: $1"; exit 1 ;;
   esac
@@ -350,6 +354,8 @@ MONITORING_SET=""
 $NO_MONITORING && MONITORING_SET="--set monitoring.enabled=false"
 EXTRA_VALUES_FLAG=""
 [ -n "${EXTRA_VALUES}" ] && EXTRA_VALUES_FLAG="--values ${EXTRA_VALUES}"
+TALOS_VALUES_FLAG=""
+$TALOS && TALOS_VALUES_FLAG="--values ${CHART_DIR}/values-talos.yaml"
 # shellcheck disable=SC2086
 run helm upgrade --install tanzen "${CHART_DIR}" \
   --namespace "${NAMESPACE}" \
@@ -357,6 +363,7 @@ run helm upgrade --install tanzen "${CHART_DIR}" \
   --values "${CHART_DIR}/values.yaml" \
   --set "global.namespace=${NAMESPACE}" \
   ${MONITORING_SET} \
+  ${TALOS_VALUES_FLAG} \
   ${EXTRA_VALUES_FLAG} \
   --wait \
   --timeout 20m

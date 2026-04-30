@@ -25,7 +25,6 @@ import importlib
 import importlib.metadata
 import os
 
-from grpc import RpcError
 from temporalio.client import Client
 from temporalio.worker import Worker
 
@@ -94,7 +93,7 @@ async def _connect_with_retry(host: str, namespace: str, max_attempts: int = 60,
     for attempt in range(1, max_attempts + 1):
         try:
             return await Client.connect(host, namespace=namespace)
-        except (RpcError, Exception) as exc:
+        except Exception as exc:
             if attempt == max_attempts:
                 raise
             print(f"Temporal not ready (attempt {attempt}/{max_attempts}): {exc}. Retrying in {delay}s…")

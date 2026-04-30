@@ -90,6 +90,13 @@ temporal:
             maxConns: 5
             maxConnLifetime: "1h"
 
+  # customSchemaJob: uses our sh -c wrapper to avoid PID-1 exec exit-1 on Talos.
+  # Disabled by default (Kind uses temporal.schema.setup/update from the sub-chart).
+  # Talos bootstrap passes --set temporal.customSchemaJob.enabled=true and disables
+  # temporal.schema.setup/update to avoid running both simultaneously.
+  customSchemaJob:
+    enabled: false
+
   # createDatabase disabled: temporal_user lacks CREATEDB on CNPG; databases
   # are pre-created by the CNPG cluster initdb (see postgres.yaml). setup/update
   # only run temporal-sql-tool against existing databases and work fine.
