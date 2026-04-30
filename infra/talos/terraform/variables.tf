@@ -67,10 +67,40 @@ variable "worker_disk_gb" {
 }
 
 variable "base_volume_name" {
-  description = "Talos base image in libvirt default pool (must include kata-containers extension)"
-  default     = "talos-v1.12.6-kata.qcow2"
+  description = "Talos base image in libvirt default pool — must include kata-containers and spin (spinkube) extensions"
+  default     = "talos-v1.12.6-kata-spin.qcow2"
 }
 
 variable "prefix" {
   default = "tz"
+}
+
+variable "node_iface" {
+  description = "Primary network interface name inside VMs (eth0 for libvirt NAT)"
+  default     = "eth0"
+}
+
+variable "node_disk" {
+  description = "Install target disk device (vda for virtio, sda for SATA)"
+  default     = "/dev/vda"
+}
+
+variable "kubeprism_port" {
+  description = "KubePrism local proxy port — must match Cilium k8sServicePort"
+  default     = 7445
+}
+
+variable "cilium_version" {
+  description = "Cilium Helm chart version"
+  default     = "1.16.5"
+}
+
+variable "lb_first_hostnum" {
+  description = "First host number in cluster_network for the L2 LoadBalancer IP pool"
+  default     = 130
+}
+
+variable "lb_last_hostnum" {
+  description = "Last host number in cluster_network for the L2 LoadBalancer IP pool"
+  default     = 230
 }

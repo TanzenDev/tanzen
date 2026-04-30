@@ -6,7 +6,7 @@ locals {
       metadata   = { name = "external" }
       spec = {
         loadBalancerIPs = true
-        interfaces      = ["eth0"]
+        interfaces      = [var.node_iface]
         nodeSelector = {
           matchExpressions = [{
             key      = "node-role.kubernetes.io/control-plane"
@@ -35,7 +35,7 @@ data "helm_template" "cilium" {
   name         = "cilium"
   repository   = "https://helm.cilium.io"
   chart        = "cilium"
-  version      = "1.16.5"
+  version      = var.cilium_version
   kube_version = var.kubernetes_version
   api_versions = []
 
@@ -65,7 +65,7 @@ data "helm_template" "cilium" {
   }
   set {
     name  = "k8sServicePort"
-    value = "7445"
+    value = tostring(var.kubeprism_port)
   }
   set {
     name  = "kubeProxyReplacement"
@@ -77,7 +77,7 @@ data "helm_template" "cilium" {
   }
   set {
     name  = "devices"
-    value = "{eth0}"
+    value = "{${var.node_iface}}"
   }
   set {
     name  = "ingressController.enabled"
@@ -111,7 +111,7 @@ data "helm_template" "cilium" {
     name  = "operator.replicas"
     value = "1"
   }
-  # Required for Kata: socket-level LB must not intercept inside the Kata VM network namespace.
+  # Kata: socket-level LB must not intercept inside the Kata VM network namespace.
   # https://docs.cilium.io/en/stable/network/kubernetes/kata/
   set {
     name  = "socketLB.hostNamespaceOnly"

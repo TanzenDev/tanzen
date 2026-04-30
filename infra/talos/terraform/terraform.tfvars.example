@@ -1,0 +1,35 @@
+# Copy to terraform.tfvars and adjust for your environment.
+# All values below are the defaults — only override what differs.
+
+# talos_version      = "v1.12.6"
+# kubernetes_version = "v1.35.2"
+
+# cluster_name     = "tanzen"
+# cluster_vip      = "10.17.5.9"
+# cluster_endpoint = "https://10.17.5.9:6443"
+# cluster_network  = "10.17.5.0/24"
+# cluster_gateway  = "10.17.5.1"
+# controller_ip    = "10.17.5.80"
+
+# controller_count    = 1
+# worker_count        = 2
+# controller_cpu      = 4
+# controller_memory_gb = 8
+# controller_disk_gb  = 40
+# worker_cpu          = 4
+# worker_memory_gb    = 16
+# worker_disk_gb      = 60
+
+# Base image must have kata-containers + spinkube extensions.
+# Build with: talosctl gen image --arch amd64 --extensions kata-containers --extensions spinkube
+# base_volume_name = "talos-v1.12.6-kata-spin.qcow2"
+
+# prefix = "tz"
+
+# node_iface     = "eth0"   # eth0 for libvirt NAT; check ip link on the VM if different
+# node_disk      = "/dev/vda"
+# kubeprism_port = 7445
+
+# cilium_version   = "1.16.5"
+# lb_first_hostnum = 130    # first IP in L2 LB pool (10.17.5.130)
+# lb_last_hostnum  = 230    # last IP in L2 LB pool (10.17.5.230)

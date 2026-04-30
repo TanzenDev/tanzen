@@ -55,6 +55,13 @@ temporal:
   server:
     replicaCount: 1
 
+    # Enforce the pattern of storing large artifacts in SeaweedFS and returning
+    # only an ID. Temporal's default is 2 MB; 512 KB catches accidental inline
+    # blobs while leaving room for normal workflow data.
+    dynamicConfig:
+      frontend.MaxPayloadSize:
+        - value: 524288   # 512 KB
+
     config:
       persistence:
         default:

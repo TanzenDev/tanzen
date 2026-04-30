@@ -759,17 +759,16 @@ function CanvasWithState({ initialIr, onExportDsl, workflowName, agents }: Workf
     const copies: Node[] = clipboard.current.map((n, i) => ({
       ...n,
       id: `${n.type?.replace("Node", "") ?? "node"}-${ts}-${i}`,
-      selected: false,
+      selected: true,
       position: { x: n.position.x + 24, y: n.position.y + 24 },
       data: {
         ...n.data,
-        ...(n.data.stepId ? { stepId: `${String(n.data.stepId)}-copy` } : {}),
+        ...(n.data.stepId ? { stepId: `${String(n.data.stepId)}-${ts}` } : {}),
       },
     }));
     setNodes((ns) => [...ns.map((n) => ({ ...n, selected: false })), ...copies]);
     pushHistory();
-    requestAnimationFrame(() => fitView({ padding: 0.25, duration: 200 }));
-  }, [setNodes, pushHistory, fitView]);
+  }, [setNodes, pushHistory]);
 
   // ── Keyboard shortcuts ────────────────────────────────────────────────────
   const containerRef = useRef<HTMLDivElement>(null);
@@ -787,6 +786,7 @@ function CanvasWithState({ initialIr, onExportDsl, workflowName, agents }: Workf
       if (meta && e.key === "z" && !e.shiftKey)                   { e.preventDefault(); undo(); }
       else if (meta && (e.key === "y" || (e.key === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
       else if (meta && e.key === "c") {
+        e.preventDefault();
         clipboard.current = nodes.filter((n) => n.selected || n.id === selectedIdRef.current);
       }
       else if (meta && e.key === "v")                              { pasteNodes(); }

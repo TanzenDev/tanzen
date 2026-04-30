@@ -17,11 +17,11 @@ data "talos_machine_configuration" "controller" {
     yamlencode({
       machine = {
         install = {
-          disk = "/dev/vda"
+          disk = var.node_disk
         }
         network = {
           interfaces = [{
-            interface = "eth0"
+            interface = var.node_iface
             addresses = ["${local.controller_ip}/24"]
             routes    = [{ network = "0.0.0.0/0", gateway = var.cluster_gateway }]
             vip       = { ip = var.cluster_vip }
@@ -31,7 +31,7 @@ data "talos_machine_configuration" "controller" {
           extraArgs = { "rotate-server-certificates" = "true" }
         }
         features = {
-          kubePrism = { enabled = true, port = 7445 }
+          kubePrism = { enabled = true, port = var.kubeprism_port }
           hostDNS   = { enabled = true, forwardKubeDNSToHost = true }
         }
       }
@@ -43,12 +43,81 @@ data "talos_machine_configuration" "controller" {
         }
         inlineManifests = [
           {
-            name     = "runtimeclass-kata"
+            name     = "cilium"
+            contents = join("---\n", [data.helm_template.cilium.manifest, local.cilium_lb_manifest])
+          },
+          {
+            name = "kubelet-serving-cert-approver"
+            contents = join("\n---\n", [
+              yamlencode({
+                apiVersion = "v1"
+                kind       = "ServiceAccount"
+                metadata   = { name = "kubelet-serving-cert-approver", namespace = "kube-system" }
+              }),
+              yamlencode({
+                apiVersion = "rbac.authorization.k8s.io/v1"
+                kind       = "ClusterRole"
+                metadata   = { name = "kubelet-serving-cert-approver" }
+                rules = [{
+                  apiGroups = ["certificates.k8s.io"]
+                  resources = ["certificatesigningrequests"]
+                  verbs     = ["get", "list", "watch"]
+                }, {
+                  apiGroups = ["certificates.k8s.io"]
+                  resources = ["certificatesigningrequests/approval"]
+                  verbs     = ["update"]
+                }, {
+                  apiGroups     = ["certificates.k8s.io"]
+                  resources     = ["signers"]
+                  resourceNames = ["kubernetes.io/kubelet-serving"]
+                  verbs         = ["approve"]
+                }]
+              }),
+              yamlencode({
+                apiVersion = "rbac.authorization.k8s.io/v1"
+                kind       = "ClusterRoleBinding"
+                metadata   = { name = "kubelet-serving-cert-approver" }
+                roleRef    = { apiGroup = "rbac.authorization.k8s.io", kind = "ClusterRole", name = "kubelet-serving-cert-approver" }
+                subjects   = [{ kind = "ServiceAccount", name = "kubelet-serving-cert-approver", namespace = "kube-system" }]
+              }),
+              yamlencode({
+                apiVersion = "apps/v1"
+                kind       = "Deployment"
+                metadata   = { name = "kubelet-serving-cert-approver", namespace = "kube-system" }
+                spec = {
+                  replicas = 1
+                  selector = { matchLabels = { app = "kubelet-serving-cert-approver" } }
+                  template = {
+                    metadata = { labels = { app = "kubelet-serving-cert-approver" } }
+                    spec = {
+                      serviceAccountName = "kubelet-serving-cert-approver"
+                      containers = [{
+                        name  = "kubelet-serving-cert-approver"
+                        image = "ghcr.io/alex1989hu/kubelet-serving-cert-approver:0.8.7"
+                        args  = ["serve"]
+                      }]
+                    }
+                  }
+                }
+              })
+            ])
+          },
+          {
+            name = "runtimeclass-kata"
             contents = yamlencode({
               apiVersion = "node.k8s.io/v1"
               kind       = "RuntimeClass"
               metadata   = { name = "kata" }
               handler    = "kata"
+            })
+          },
+          {
+            name = "runtimeclass-spin"
+            contents = yamlencode({
+              apiVersion = "node.k8s.io/v1"
+              kind       = "RuntimeClass"
+              metadata   = { name = "wasmtime-spin-v2" }
+              handler    = "spin"
             })
           }
         ]
@@ -69,16 +138,17 @@ data "talos_machine_configuration" "worker" {
     yamlencode({
       machine = {
         install = {
-          disk = "/dev/vda"
+          disk = var.node_disk
         }
         nodeLabels = {
           "kata.tanzen.dev/capable" = "true"
+          "spin.tanzen.dev/capable" = "true"
         }
         kubelet = {
           extraArgs = { "rotate-server-certificates" = "true" }
         }
         features = {
-          kubePrism = { enabled = true, port = 7445 }
+          kubePrism = { enabled = true, port = var.kubeprism_port }
           hostDNS   = { enabled = true, forwardKubeDNSToHost = true }
         }
       }
