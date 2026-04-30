@@ -330,6 +330,23 @@ kube-prometheus-stack:
     adminPassword: ""  # Overridden by grafana-admin-credentials Secret in bootstrap.sh
     existingSecret: grafana-admin-credentials
     adminUser: admin
+
+    # Generic OAuth / OIDC — activated by bootstrap.sh when OIDC_ISSUER is set.
+    # Keycloak setup: create a "grafana" confidential client, add tanzen_role claim.
+    # bootstrap.sh passes --set kube-prometheus-stack.grafana.grafana\.ini... overrides.
+    grafana.ini:
+      auth.generic_oauth:
+        enabled: false
+        name: "Tanzen SSO"
+        allow_sign_up: true
+        scopes: "openid email profile"
+        # role_attribute_path maps the tanzen_role claim → Grafana role
+        role_attribute_path: "contains(roles[*], 'admin') && 'Admin' || 'Viewer'"
+        # URLs, client_id, client_secret injected by bootstrap.sh when OIDC_ISSUER is set
+      auth:
+        # Disable password login once SSO is verified working.
+        # Set to false via --set when deploying with OIDC.
+        disable_login_form: false
     persistence:
       enabled: false  # Dev; enable with storageClass in prod
     service:

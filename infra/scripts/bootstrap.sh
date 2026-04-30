@@ -356,6 +356,23 @@ EXTRA_VALUES_FLAG=""
 [ -n "${EXTRA_VALUES}" ] && EXTRA_VALUES_FLAG="--values ${EXTRA_VALUES}"
 TALOS_VALUES_FLAG=""
 $TALOS && TALOS_VALUES_FLAG="--values ${CHART_DIR}/values-talos.yaml"
+
+# Grafana OIDC SSO — injected when OIDC_ISSUER is set in the environment.
+# Requires a "grafana" confidential client in the IdP with the tanzen_role claim.
+GRAFANA_OIDC_SETS=""
+if [ -n "${OIDC_ISSUER:-}" ]; then
+  OIDC_CLIENT_ID="${OIDC_GRAFANA_CLIENT_ID:-grafana}"
+  OIDC_CLIENT_SECRET="${OIDC_GRAFANA_CLIENT_SECRET:-}"
+  GRAFANA_OIDC_SETS=" \
+    --set 'kube-prometheus-stack.grafana.grafana\.ini.auth\.generic_oauth.enabled=true' \
+    --set 'kube-prometheus-stack.grafana.grafana\.ini.auth\.generic_oauth.client_id=${OIDC_CLIENT_ID}' \
+    --set 'kube-prometheus-stack.grafana.grafana\.ini.auth\.generic_oauth.client_secret=${OIDC_CLIENT_SECRET}' \
+    --set 'kube-prometheus-stack.grafana.grafana\.ini.auth\.generic_oauth.auth_url=${OIDC_ISSUER}/protocol/openid-connect/auth' \
+    --set 'kube-prometheus-stack.grafana.grafana\.ini.auth\.generic_oauth.token_url=${OIDC_ISSUER}/protocol/openid-connect/token' \
+    --set 'kube-prometheus-stack.grafana.grafana\.ini.auth\.generic_oauth.api_url=${OIDC_ISSUER}/protocol/openid-connect/userinfo'"
+  log "OIDC_ISSUER set — enabling Grafana SSO (client: ${OIDC_CLIENT_ID})"
+fi
+
 # shellcheck disable=SC2086
 run helm upgrade --install tanzen "${CHART_DIR}" \
   --namespace "${NAMESPACE}" \
@@ -365,6 +382,7 @@ run helm upgrade --install tanzen "${CHART_DIR}" \
   ${MONITORING_SET} \
   ${TALOS_VALUES_FLAG} \
   ${EXTRA_VALUES_FLAG} \
+  ${GRAFANA_OIDC_SETS} \
   --wait \
   --timeout 20m
 
