@@ -53,7 +53,10 @@ export function Layout() {
     <div className="flex h-screen overflow-hidden bg-[var(--shell-bg)]">
       {/* Sidebar */}
       <nav className="w-52 flex-shrink-0 flex flex-col gap-1 border-r border-[var(--shell-border)] bg-[var(--shell-sidebar-bg)] p-4">
-        <p className="mb-4 text-xs font-bold uppercase tracking-widest text-[var(--shell-text-subtle)]">Tanzen</p>
+        <div className="mb-4 flex items-center gap-2">
+          <img src="/favicon.png" alt="Tanzen" className="h-5 w-5 rounded-sm" />
+          <p className="text-xs font-bold uppercase tracking-widest text-[var(--shell-text-subtle)]">Tanzen</p>
+        </div>
 
         <p className="mt-2 mb-1 text-xs font-semibold uppercase tracking-wider text-[var(--shell-text-subtle)]">Build</p>
         <NavItem to="/agents" label="Agents" Icon={Bot} />
