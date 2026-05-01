@@ -6,6 +6,7 @@
  * for the published npm package.
  */
 export { default as App } from "./App.js";
+export { ThemeProvider, useTheme } from "./context/ThemeContext.js";
 export {
   registerExtension,
   useSlot,
